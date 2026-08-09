@@ -83,7 +83,7 @@ class Footer extends HTMLElement{
 					</div>
 					<div class="tr">
 						<a href="" class="">
-							INDIA
+							PHILIPPINES
 							<img src="./assets/in.svg" alt="" class="" />
 						</a>
 					</div>
