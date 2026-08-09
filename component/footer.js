@@ -84,7 +84,7 @@ class Footer extends HTMLElement{
 					<div class="tr">
 						<a href="" class="">
 							PHILIPPINES
-							<img src="C:\Users\gillian.c.gunita\Documents\Phishing_Site\Mysp0tify\assets\PH.svg" alt="" class="" />
+							<img src="./assets/PH.svg" alt="" class="" />
 						</a>
 					</div>
 					<div class="footer_bot">
