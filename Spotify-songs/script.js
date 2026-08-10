@@ -2,22 +2,21 @@
 let songIndex = 0;
 let audioElement = new Audio('songs/1.mp3');
 let masterPlay = document.getElementById('masterPlay');
-let myProgressBar = document.getElementById('myProgressBar');
 let gif = document.getElementById('gif');
 let masterSongName = document.getElementById('masterSongName');
 let songItems = Array.from(document.getElementsByClassName('songItem'));
 
 let songs = [
-    {songName: "Taylor swift- Blank space", filePath: "songs/1.mp3", coverPath: "covers/1.jpg"},
-    {songName: "ED Shereen - Shape of you", filePath: "songs/2.mp3", coverPath: "covers/2.jpg"},
-    {songName: "Tones and I - Dance monkey", filePath: "songs/3.mp3", coverPath: "covers/3.jpg"},
-    {songName: "Dua Lipa - Levetating", filePath: "songs/4.mp3", coverPath: "covers/4.jpg"},
-    {songName: "AR Rahman violin music", filePath: "songs/5.mp3", coverPath: "covers/5.jpg"},
-    {songName: "Animal - sari duniya ", filePath: "songs/6.mp3", coverPath: "covers/6.jpg"},
-    {songName: "Kabir singh - bekhayali", filePath: "songs/7.mp3", coverPath: "covers/7.jpg"},
-    {songName: "Mustafa mustafa - telugu", filePath: "songs/8.mp3", coverPath: "covers/8.jpg"},
-    {songName: "Em sandeham ledu - telugu", filePath: "songs/9.mp3", coverPath: "covers/9.jpg"},
-    {songName: "Nee kalli neeli", filePath: "songs/10.mp3", coverPath: "covers/10.jpg"},
+    {songName: "Taylor Swift - Blank Space", filePath: "songs/1.mp3", coverPath: "covers/1.jpg"},
+    {songName: "Ed Sheeran - Shape of You", filePath: "songs/2.mp3", coverPath: "covers/2.jpg"},
+    {songName: "Tones And I - Dance Monkey", filePath: "songs/3.mp3", coverPath: "covers/3.jpg"},
+    {songName: "Dua Lipa - Levitating", filePath: "songs/4.mp3", coverPath: "covers/4.jpg"},
+    {songName: "HONNE - No Song Without You", filePath: "songs/5.mp3", coverPath: "covers/honne.jpg"},
+    {songName: "NIKI - Lowkey", filePath: "songs/6.mp3", coverPath: "covers/niki.jpg"},
+    {songName: "Cup of Joe - Multo", filePath: "songs/7.mp3", coverPath: "covers/coj.jpg"},
+    {songName: "Arthur Nery - Isa Lang", filePath: "songs/8.mp3", coverPath: "covers/ar2r.jpg"},
+    {songName: "Rob Deniel - Sinta", filePath: "songs/9.mp3", coverPath: "covers/rob.jpg"},
+    {songName: "Earl Agustin - Tibok", filePath: "songs/10.mp3", coverPath: "covers/earl.jpg"},
 ]
 
 songItems.forEach((element, i)=>{ 
@@ -42,16 +41,6 @@ masterPlay.addEventListener('click', ()=>{
     }
 })
 // Listen to Events
-audioElement.addEventListener('timeupdate', ()=>{ 
-    // Update Seekbar
-    progress = parseInt((audioElement.currentTime/audioElement.duration)* 100); 
-    myProgressBar.value = progress;
-})
-
-myProgressBar.addEventListener('change', ()=>{
-    audioElement.currentTime = myProgressBar.value * audioElement.duration/100;
-})
-
 const makeAllPlays = ()=>{
     Array.from(document.getElementsByClassName('songItemPlay')).forEach((element)=>{
         element.classList.remove('fa-pause-circle');
