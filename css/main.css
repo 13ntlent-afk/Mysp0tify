@@ -575,6 +575,11 @@ header {
 .phoneNtablet .container{
     text-align: center;
 }
+
+.storebox img{
+    width: 140px;
+    height: auto;
+}
 .phoneNtablet h3{
     font-size: 32px;
     line-height: 40px;
