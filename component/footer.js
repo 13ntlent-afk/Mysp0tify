@@ -64,6 +64,10 @@ class Footer extends HTMLElement{
 								<a href=""
 									>Free Mobile App</a>
 							</div>
+							<div>
+								<a href=""
+									>Import your Music</a>
+							</div>
 						</div>
 					</div>
 					<div class="social">
