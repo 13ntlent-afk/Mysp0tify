@@ -106,6 +106,9 @@ class Footer extends HTMLElement{
 							<li class="">
 								<a href="" class="">About Ads</a>
 							</li>
+							<li class="">
+								<a href="" class="">Accessibility</a>
+							</li>
 						</ul>
 						<span> © 2026 Spotify PH </span>
 					</div>
