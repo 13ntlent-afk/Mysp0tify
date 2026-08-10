@@ -647,7 +647,7 @@ header {
 /*Help*/
 .Search{
     padding: 0 8px 24px;
-    background: url(../assets/search-mobile.webp) top/100% no-repeat var(--linkgreen);
+    background: url(../assets/search-mobile.webp) top/100% no-repeat #1c2963;
 }
 @media (min-width: 768px){
     .Search{
@@ -733,7 +733,7 @@ header {
     line-height: 1.5;
 }
 .Help-links{
-    background-color: var(--linkgreen);
+    background-color: #eee;
     padding: 30px 0 40px;
 }
 .links_boxs{
@@ -779,7 +779,7 @@ header {
     font-weight: 500;
 }
 .visitCommunity .black_btn{
-    background-color: var(--linkgreen);
+    background-color: rgb(45, 70, 185);
     border: 0px !important;
     min-width: 0px;
     margin: 0px;
