@@ -9,14 +9,15 @@ plantemplate.innerHTML = `
             flex-direction: column;
             height: calc(100% + 100px);
             position: relative;
+            background-color: #fff;
         }
         .pay-plan.active_plan{
             border-radius: 0px 0px 10px 10px;
         }
         .active_plan:before{
             box-sizing: border-box;
-            background: rgb(0, 0, 0);
-            color: rgb(255, 255, 255);
+            background: #d8c3ff;
+            color: #111;
             content: 'YOUR CURRENT PLAN';
             padding: 8px 16px;
             position: absolute;
@@ -106,6 +107,27 @@ plantemplate.innerHTML = `
         .subscribe-btn:hover{
             transform: scale(1.04);
             background-color: var(--hvrgreen, #1ed760);
+        }
+        .subscribe-btn.pink{
+            background-color: #f6b3c2;
+            color: #111;
+        }
+        .subscribe-btn.pink:hover{
+            background-color: #ee8fa7;
+        }
+        .subscribe-btn.yellow-orange{
+            background-color: #f6b041;
+            color: #111;
+        }
+        .subscribe-btn.yellow-orange:hover{
+            background-color: #e89f20;
+        }
+        .subscribe-btn.baby-blue{
+            background-color: #9bd0ff;
+            color: #111;
+        }
+        .subscribe-btn.baby-blue:hover{
+            background-color: #7dbdff;
         }
         .subscribe-btn{
             text-align: center;
@@ -206,10 +228,13 @@ class payPlan extends HTMLElement {
             }
         }
     }
-    //Ne yaptığımdan tam olarak emin değilim ama oldu.
+    const btnColor = this.getAttribute('btncolor');
+    const submitBtn = this.shadowRoot.querySelector('.subscribe-btn');
+    if (submitBtn && btnColor) {
+        submitBtn.classList.add(btnColor);
+    }
 
     // Notify the page to open the subscription form with this plan's details.
-    const submitBtn = this.shadowRoot.querySelector('.subscribe-btn');
     if (submitBtn) {
         submitBtn.addEventListener('click', () => {
             this.dispatchEvent(new CustomEvent('subscribe', {
