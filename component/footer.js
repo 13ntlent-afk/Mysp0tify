@@ -62,9 +62,7 @@ class Footer extends HTMLElement{
 							</div>
 							<div>
 								<a href=""
-									>Free Mobile 
-									<br/>
-								APPLICATION </a>
+									>Free Mobile App</a>
 							</div>
 						</div>
 					</div>
