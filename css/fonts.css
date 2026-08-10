@@ -117,6 +117,11 @@ a{
 .premium-head h1{
     letter-spacing: 0.25px;
 }
+.premium-head h2,
+.premium-head h3,
+.premium-head small{
+    color: var(--white);
+}
 .hm_cont h3{
     font-size: 24px;
     letter-spacing: -0.01em;
