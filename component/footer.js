@@ -43,7 +43,7 @@ class Footer extends HTMLElement{
 								<a href="">Developers</a>
 							</div>
 							<div>
-								<a href="">Advert</a>
+								<a href="">Advertising</a>
 							</div>
 							<div>
 								<a href="">Investors</a>
