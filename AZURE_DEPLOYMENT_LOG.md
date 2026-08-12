@@ -14,7 +14,7 @@ resources live in this subscription today, not a generic template.
 5. [CI/CD pipeline](#5-cicd-pipeline)
 6. [Verification](#6-verification)
 7. [Notes and gotchas](#7-notes-and-gotchas)
-8. [Custom apex domain migration](#8-custom-apex-domain-migration)
+8. [Static Web App custom domain configuration](#8-static-web-app-custom-domain-configuration)
 
 ---
 
@@ -387,56 +387,93 @@ HTTP-exposed route, unlike `subscriptions` defined in [api/index.js](api/index.j
 
 ---
 
-## 8. Custom apex domain migration
+## 8. Static Web App custom domain configuration
 
-`my-spotify-player.com` was previously the GitHub Pages custom domain (via the repo's
-[CNAME](CNAME) file, now removed) and is being moved to point at the Azure Static Web
-App instead.
+The default `*.azurestaticapps.net` hostname (`nice-pond-03e938600...`) is permanent and
+can't be renamed — a **custom domain** is layered on top of it instead. This section
+covers how that works in general, then the specific apex-domain migration performed for
+`my-spotify-player.com` (previously the GitHub Pages custom domain, via the repo's
+[CNAME](CNAME) file, now removed).
 
-### 8.1 Register the hostname (TXT validation)
+### 8.1 The two supported methods
 
-Apex/root domains can't use a CNAME record per the DNS spec, so Azure validates
-ownership via a TXT record instead of the default CNAME method used for subdomains:
+`az staticwebapp hostname set` supports two `--validation-method` values, and which one
+you need depends on whether you're adding a **subdomain** or an **apex/root domain**:
 
+| Method | Used for | How it works |
+|---|---|---|
+| `cname-delegation` (default) | Subdomains, e.g. `www.my-spotify-player.com` | You create a CNAME record pointing the subdomain at the SWA's default hostname; Azure resolves that CNAME itself to confirm you control the domain — no separate token needed. |
+| `dns-txt-token` | Apex/root domains, e.g. `my-spotify-player.com` | Root domains cannot have a CNAME record (DNS spec: the apex can only hold an A/AAAA/ALIAS/ANAME/SOA/NS/MX/TXT, never a CNAME), so Azure instead issues a random token you publish as a TXT record to prove ownership, independent of how traffic is actually routed. |
+
+### 8.2 Subdomain flow (`cname-delegation`)
+
+```powershell
+az staticwebapp hostname set --name spotify-web --resource-group rg-spotify-web-demo `
+  --hostname www.my-spotify-player.com
+```
+Requires the CNAME record (`www` → `nice-pond-03e938600.7.azurestaticapps.net`) to
+already exist and resolve *before* running the command — Azure validates it inline and
+the call fails immediately with `(BadRequest) CNAME Record is invalid` if it doesn't
+(this is exactly what happened in step 8.3 below when the apex domain was tried with
+the default method, since an apex can never satisfy this check).
+
+### 8.3 Apex/root domain flow (`dns-txt-token`) — what was actually run
+
+**Register the hostname:**
 ```powershell
 az staticwebapp hostname set --name spotify-web --resource-group rg-spotify-web-demo `
   --hostname my-spotify-player.com --validation-method dns-txt-token --no-wait
 ```
-
 The first attempt used the default `cname-delegation` method and failed with
-`(BadRequest) CNAME Record is invalid` — expected, since apex domains have no CNAME to
-validate against.
+`(BadRequest) CNAME Record is invalid. Please ensure the CNAME record has been
+created.` — expected, since apex domains have no CNAME to validate against.
+`--no-wait` returns immediately instead of blocking the terminal while Azure polls DNS.
 
-### 8.2 Retrieve the validation token
-
-The token isn't available immediately; poll until `validationToken` is populated:
-
+**Retrieve the validation token** (not available immediately — poll until populated):
 ```powershell
 az staticwebapp hostname show --name spotify-web --resource-group rg-spotify-web-demo `
   --hostname my-spotify-player.com --query "{status:status, validationToken:validationToken}"
 ```
+Returned `status: Validating` and a token, e.g. `_1afjxu9razylvrt0s0r1fec1qtkopay`.
 
-### 8.3 DNS records to add at the domain registrar (manual, external step)
-
-At whichever registrar/DNS host manages `my-spotify-player.com` (**not** Azure DNS in
-this project), add:
+**Add DNS records at the domain registrar** (manual, external step — `my-spotify-player.com`
+is not an Azure DNS zone, so this can't be done via `az` in this project):
 
 | Type | Host/Name | Value |
 |---|---|---|
-| TXT | `@` (root) | the `validationToken` from 8.2 |
-| ALIAS / ANAME (preferred) **or** A | `@` (root) | `nice-pond-03e938600.7.azurestaticapps.net` (ALIAS/ANAME target) — use an A/ALIAS per your provider's apex-routing support |
+| TXT | `@` (root) | the `validationToken` above |
+| ALIAS / ANAME (preferred) **or** A | `@` (root) | `nice-pond-03e938600.7.azurestaticapps.net` |
 
-Many registrars don't support ALIAS/ANAME/CNAME-flattening at the apex; if yours
-doesn't, either use a DNS provider that does (e.g. Cloudflare) or serve the apex via a
-301 redirect to `www.my-spotify-player.com` and register `www` as a normal CNAME
-subdomain instead (`cname-delegation`, the default method).
+The TXT record is purely for **ownership proof**; the ALIAS/ANAME/A record is what
+actually routes visitor traffic. Many registrars don't support ALIAS/ANAME/CNAME-
+flattening at the apex; if yours doesn't, either switch to a DNS provider that does
+(e.g. Cloudflare) or 301-redirect the apex to `www.my-spotify-player.com` and register
+`www` as a normal subdomain via `cname-delegation` (8.2) instead.
 
-### 8.4 Confirm validation completed
-
+**Confirm validation completed:**
 ```powershell
 az staticwebapp hostname show --name spotify-web --resource-group rg-spotify-web-demo `
   --hostname my-spotify-player.com --query status
 ```
-
 Status moves from `Validating` to `Ready` once the TXT record propagates and Azure
-re-checks it (can take minutes to hours depending on the registrar's TTL).
+re-checks it (minutes to hours, depending on the registrar's TTL).
+
+### 8.4 What happens automatically once validated
+
+- Azure issues and auto-renews a **free managed TLS certificate** for the domain — no
+  separate certificate request/upload step, and no cost.
+- The domain starts resolving to the same SWA content and API as the default hostname;
+  both the default `*.azurestaticapps.net` hostname and the custom domain keep working
+  side by side (the default one is never removed).
+
+### 8.5 Changing or removing a custom domain later
+
+```powershell
+# Swap to a different domain
+az staticwebapp hostname delete --name spotify-web --resource-group rg-spotify-web-demo --hostname my-spotify-player.com
+az staticwebapp hostname set --name spotify-web --resource-group rg-spotify-web-demo --hostname <new-domain> --validation-method dns-txt-token
+```
+Deleting a hostname only detaches it from the SWA (and revokes its managed cert) — it
+does not affect the underlying `*.azurestaticapps.net` hostname or delete the DNS
+records at the registrar, which must be removed there separately.
+
