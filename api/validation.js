@@ -10,7 +10,7 @@
 
 // Plan name -> price. Must stay in sync with the <pay-plan> elements in premium.html.
 const PLANS = Object.freeze({
-  Individual: '179 RS/month',
+  'FREE trial': '179 RS/month',
   Duo: '239 RS/month',
   Family: '299 RS/month',
   Student: '149 RS/month',

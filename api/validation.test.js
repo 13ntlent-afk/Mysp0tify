@@ -8,7 +8,7 @@ const validBody = {
   firstName: 'Ada',
   lastName: 'Lovelace',
   email: 'Ada@Example.com',
-  plan: 'Individual',
+  plan: 'FREE trial',
 };
 
 test('accepts a valid payload and normalises the email', () => {
@@ -23,7 +23,7 @@ test('derives the price on the server and ignores a client-supplied one', () => 
   const result = validateSubscription({ ...validBody, price: '1 RS/month' });
 
   assert.equal(result.valid, true);
-  assert.equal(result.value.price, PLANS.Individual);
+  assert.equal(result.value.price, PLANS['FREE trial']);
 });
 
 test('rejects any request carrying card data', () => {
