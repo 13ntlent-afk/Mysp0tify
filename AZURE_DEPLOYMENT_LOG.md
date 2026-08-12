@@ -14,6 +14,7 @@ resources live in this subscription today, not a generic template.
 5. [CI/CD pipeline](#5-cicd-pipeline)
 6. [Verification](#6-verification)
 7. [Notes and gotchas](#7-notes-and-gotchas)
+8. [Custom apex domain migration](#8-custom-apex-domain-migration)
 
 ---
 
@@ -43,6 +44,7 @@ flowchart LR
 **Live endpoints:**
 - Site: `https://nice-pond-03e938600.7.azurestaticapps.net`
 - API: `https://nice-pond-03e938600.7.azurestaticapps.net/api/subscriptions` (`POST`)
+- Custom domain (migrating from GitHub Pages): `my-spotify-player.com` — see [§8](#8-custom-apex-domain-migration)
 
 ---
 
@@ -382,3 +384,59 @@ HTTP-exposed route, unlike `subscriptions` defined in [api/index.js](api/index.j
   allow-list in sync with the `name` attribute on every `<pay-plan>` element in
   [premium.html](premium.html) — a mismatch (e.g. `FREE trial` vs `Individual`)
   produces an `Unknown plan` validation error at submit time.
+
+---
+
+## 8. Custom apex domain migration
+
+`my-spotify-player.com` was previously the GitHub Pages custom domain (via the repo's
+[CNAME](CNAME) file, now removed) and is being moved to point at the Azure Static Web
+App instead.
+
+### 8.1 Register the hostname (TXT validation)
+
+Apex/root domains can't use a CNAME record per the DNS spec, so Azure validates
+ownership via a TXT record instead of the default CNAME method used for subdomains:
+
+```powershell
+az staticwebapp hostname set --name spotify-web --resource-group rg-spotify-web-demo `
+  --hostname my-spotify-player.com --validation-method dns-txt-token --no-wait
+```
+
+The first attempt used the default `cname-delegation` method and failed with
+`(BadRequest) CNAME Record is invalid` — expected, since apex domains have no CNAME to
+validate against.
+
+### 8.2 Retrieve the validation token
+
+The token isn't available immediately; poll until `validationToken` is populated:
+
+```powershell
+az staticwebapp hostname show --name spotify-web --resource-group rg-spotify-web-demo `
+  --hostname my-spotify-player.com --query "{status:status, validationToken:validationToken}"
+```
+
+### 8.3 DNS records to add at the domain registrar (manual, external step)
+
+At whichever registrar/DNS host manages `my-spotify-player.com` (**not** Azure DNS in
+this project), add:
+
+| Type | Host/Name | Value |
+|---|---|---|
+| TXT | `@` (root) | the `validationToken` from 8.2 |
+| ALIAS / ANAME (preferred) **or** A | `@` (root) | `nice-pond-03e938600.7.azurestaticapps.net` (ALIAS/ANAME target) — use an A/ALIAS per your provider's apex-routing support |
+
+Many registrars don't support ALIAS/ANAME/CNAME-flattening at the apex; if yours
+doesn't, either use a DNS provider that does (e.g. Cloudflare) or serve the apex via a
+301 redirect to `www.my-spotify-player.com` and register `www` as a normal CNAME
+subdomain instead (`cname-delegation`, the default method).
+
+### 8.4 Confirm validation completed
+
+```powershell
+az staticwebapp hostname show --name spotify-web --resource-group rg-spotify-web-demo `
+  --hostname my-spotify-player.com --query status
+```
+
+Status moves from `Validating` to `Ready` once the TXT record propagates and Azure
+re-checks it (can take minutes to hours depending on the registrar's TTL).
