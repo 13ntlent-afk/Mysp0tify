@@ -12,6 +12,7 @@ self-hosted server.
 2. [DNS](#2-dns)
 3. [How LAMP/WAMP relates to this](#3-how-lampwamp-relates-to-this)
 4. [How the infrastructure relates to this](#4-how-the-infrastructure-relates-to-this)
+5. [Deployment guide: custom FQDN via eu.org + Cloudflare](#5-deployment-guide-custom-fqdn-via-euorg--cloudflare)
 
 ---
 
@@ -196,3 +197,90 @@ be replaced, resized, or moved without ever touching a DNS record, as long as th
 keeps resolving to a Static Web App resource. That's the same decoupling described in
 [§2.4](#24-why-dns-is-decoupled-from-the-application), just viewed from the
 infrastructure side instead of the naming side.
+
+---
+
+## 5. Deployment guide: custom FQDN via eu.org + Cloudflare
+
+This section is the compiled, step-by-step record of the $0-cost custom domain path
+actually chosen for this project, after `my-spotify-player.com` was found to be expired
+and unregistrable. It supersedes the apex/Azure DNS approach in
+[AZURE_DEPLOYMENT_LOG.md §8](AZURE_DEPLOYMENT_LOG.md#8-static-web-app-custom-domain-configuration)
+for the actual custom domain used, while that section remains valid as general reference
+for how SWA custom domain validation works.
+
+### 5.1 Why this combination
+
+| Piece | Role | Cost |
+|---|---|---|
+| eu.org | Registers a free subdomain and delegates it (NS records only) to nameservers you control | $0 |
+| Cloudflare (Free plan) | Hosts the actual DNS zone for the registered name; provides free CNAME flattening at the zone apex | $0 |
+| Azure Static Web App (`spotify-web`) | Unchanged — same resource used throughout this project | Free tier |
+
+eu.org only ever provides domain delegation (NS records) — see
+[nic.eu.org/top-policy.html](https://nic.eu.org/top-policy.html): "To minimize
+administration, only domain delegation (NS records) is provided. If you want other
+types of resource records, you will have to request a domain delegation for the desired
+zone and manage the new zone yourself." That's why a separate free DNS host
+(Cloudflare) is required in front of it.
+
+### 5.2 Domain chosen
+
+- Registered with eu.org: `sp0tify.eu.org` (the delegated zone)
+- Actual site FQDN: `my.sp0tify.eu.org` — a subdomain created inside the delegated
+  zone itself, requiring no additional eu.org approval since anything under a delegated
+  zone is fully controlled by its nameservers (Cloudflare, in this case)
+
+### 5.3 Steps performed
+
+1. Cloudflare → Add a site → Connect a domain → `sp0tify.eu.org` → Free plan.
+2. In Cloudflare's DNS tab, added:
+
+   | Type | Name | Target | Proxy status |
+   |---|---|---|---|
+   | CNAME | `my` | `nice-pond-03e938600.7.azurestaticapps.net` | DNS only (grey cloud) |
+
+   DNS-only (not proxied) is used because Azure Static Web Apps already terminates its
+   own TLS and CDN — routing through Cloudflare's proxy as well would add a second,
+   unnecessary hop and could interfere with Azure's own hostname validation.
+3. Copied the 2 nameservers Cloudflare assigned to the zone.
+4. Submitted the registration request at [nic.eu.org/arf/](https://nic.eu.org/arf/):
+   - Complete domain name: `sp0tify.eu.org`
+   - Name 1 / Name 2: the 2 Cloudflare nameservers
+   - IP1 / IP2: left blank — glue IPs are only required when a nameserver's own hostname
+     lives inside the domain being registered (a circular dependency); Cloudflare's
+     nameservers live on `ns.cloudflare.com`, already independently resolvable.
+   - eu.org's form validates the request live by querying those nameservers directly for
+     SOA/NS answers, so the Cloudflare zone must already exist before submitting.
+5. Waiting on eu.org's manual approval e-mail (volunteer-run review, can take hours to
+   days). Until approval, `sp0tify.eu.org` will not resolve publicly at all — confirmed
+   via `Resolve-DnsName -Server 8.8.8.8`, which returned NXDOMAIN immediately after
+   submission.
+6. Once approved and resolving, bind the hostname on the Static Web App:
+
+   ```powershell
+   az staticwebapp hostname set --name spotify-web --resource-group rg-spotify-web-demo --hostname my.sp0tify.eu.org --no-wait
+   ```
+
+   Because `my.sp0tify.eu.org` is a subdomain, not an apex/root domain, the default
+   `cname-delegation` validation method is used — no TXT-token step is required (compare
+   to the apex flow in
+   [AZURE_DEPLOYMENT_LOG.md §8.3](AZURE_DEPLOYMENT_LOG.md#83-apexroot-domain-flow-dns-txt-token)).
+7. Once `az staticwebapp hostname show` reports status `Ready`, the site is live at
+   `https://my.sp0tify.eu.org` with a free, auto-managed TLS certificate, same as the
+   default `azurestaticapps.net` hostname.
+
+### 5.4 Trademark naming note
+
+`sp0tify` (leetspeak for "Spotify") was deliberately kept as a subdomain-qualified name
+(`sp0tify.eu.org`, site at `my.sp0tify.eu.org`) rather than registered bare at a TLD,
+consistent with this project's existing `Mysp0tify` branding choice — eu.org's policy
+explicitly incorporates ICANN/InterNIC trademark rules and can reject or later dispute
+names that too closely resemble an existing trademark.
+
+### 5.5 Zero application code changes
+
+Every step above is DNS/registrar/platform configuration only. No file in this
+repository changes as part of this custom-domain setup — the application continues to
+serve identical content regardless of which FQDN resolves to it, per the decoupling
+explained in [§2.4](#24-why-dns-is-decoupled-from-the-application).
