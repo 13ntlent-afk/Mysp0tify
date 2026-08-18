@@ -17,11 +17,25 @@ async function readJsonBody(request) {
   }
 }
 
+// Resolves the real visitor IP even when requests arrive through a proxy
+// (e.g. the Netlify redirect in netlify.toml), which forwards the original
+// client address in X-Forwarded-For rather than the proxy's own IP.
+function getClientIp(request) {
+  const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded) {
+    // The header can carry a chain (client, proxy1, proxy2, ...); the first
+    // entry is the original caller.
+    return forwarded.split(',')[0].trim();
+  }
+  return request.headers.get('x-azure-clientip') || 'unknown';
+}
+
 app.http('subscriptions', {
   methods: ['POST'],
   authLevel: 'anonymous',
   route: 'subscriptions',
   handler: async (request, context) => {
+    const clientIp = getClientIp(request);
     const body = await readJsonBody(request);
     if (body === undefined) {
       return jsonResponse(400, { error: 'Request body must be valid JSON.' });
@@ -29,6 +43,7 @@ app.http('subscriptions', {
 
     const result = validateSubscription(body);
     if (!result.valid) {
+      context.log(`Validation failed for request from ${clientIp}`);
       return jsonResponse(400, { error: 'Validation failed.', details: result.errors });
     }
 
@@ -38,7 +53,7 @@ app.http('subscriptions', {
       // Re-subscribing to the same plan is a no-op rather than a duplicate row.
       const existing = await findSubscription(email, plan);
       if (existing) {
-        context.log(`Subscription already exists for plan "${plan}"`);
+        context.log(`Subscription already exists for plan "${plan}" (request from ${clientIp})`);
         return jsonResponse(200, {
           id: existing.id,
           plan,
@@ -62,7 +77,7 @@ app.http('subscriptions', {
         createdAt: new Date().toISOString(),
       });
 
-      context.log(`Stored subscription ${saved.id} for plan "${plan}"`);
+      context.log(`Stored subscription ${saved.id} for plan "${plan}" (request from ${clientIp})`);
       return jsonResponse(201, {
         id: saved.id,
         plan,
@@ -72,7 +87,7 @@ app.http('subscriptions', {
       });
     } catch (error) {
       // Log the failure, never the submitted personal data.
-      context.error('Failed to store subscription', error);
+      context.error(`Failed to store subscription (request from ${clientIp})`, error);
 
       // Temporary diagnostics: only when DEBUG_ERRORS=1 is set as an app
       // setting, so production responses never leak internal details.

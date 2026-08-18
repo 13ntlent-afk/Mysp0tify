@@ -1,0 +1,15 @@
+# Netlify hosts no files of its own here — every request is proxied straight
+# through to the real Azure Static Web App (frontend + managed Functions API).
+# This exists purely to give the project a fast, free, instantly-available
+# hostname (sp0tify.netlify.app) while a permanent custom domain
+# (my.sp0tify.eu.org) is still pending eu.org's manual approval — see
+# FQDN_DNS_LAMP_INFRASTRUCTURE.md §5.
+#
+# Netlify forwards the original visitor's IP in the X-Forwarded-For header,
+# which api/index.js reads so request-level logging still reflects the real
+# visitor instead of Netlify's edge IP.
+[[redirects]]
+  from = "/*"
+  to = "https://nice-pond-03e938600.7.azurestaticapps.net/:splat"
+  status = 200
+  force = true
