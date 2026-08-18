@@ -15,6 +15,7 @@ resources live in this subscription today, not a generic template.
 6. [Verification](#6-verification)
 7. [Notes and gotchas](#7-notes-and-gotchas)
 8. [Static Web App custom domain configuration](#8-static-web-app-custom-domain-configuration)
+9. [Logging and security monitoring (Microsoft Sentinel)](#9-logging-and-security-monitoring-microsoft-sentinel)
 
 ---
 
@@ -26,10 +27,18 @@ flowchart LR
     GH -->|GitHub Actions workflow| Build[Build job: ubuntu-latest]
     Build -->|Azure/static-web-apps-deploy| SWA[Azure Static Web App: spotify-web]
     SWA -->|serves| Site[Static site: index.html, css, js, assets]
+    Site -->|App Insights JS SDK| AI[App Insights: appi-spotify-web]
     SWA -->|hosts managed Functions| API[API: /api/subscriptions]
     API -->|reads/writes| Cosmos[(Cosmos DB: cosmos-spotify-web-prod)]
     Cosmos --> DB[Database: cosmo-spotify-db]
     DB --> Container[Container: subscription, partition key /email]
+
+    Cosmos -->|diagnostic settings| LAW[(Log Analytics: law-spotify-web)]
+    AI -->|ingestion mode: LogAnalytics| LAW
+    Sub[Subscription Activity Log] -->|diagnostic settings| LAW
+    Defender[Defender for Cloud: Defender for Cosmos DB] -->|SecurityAlert| LAW
+    LAW --> Sentinel[Microsoft Sentinel]
+    Sentinel -->|analytics rules| Incidents[Incidents + Workbook]
 ```
 
 | Resource | Name | Purpose |
@@ -40,6 +49,9 @@ flowchart LR
 | Cosmos container | `subscription` (partition key `/email`) | Table-like collection holding subscription documents |
 | Static Web App | `spotify-web` | Hosts the static frontend **and** a managed Azure Functions API, fronted by a global CDN with free HTTPS |
 | GitHub Actions workflow | `azure-static-web-apps-nice-pond-03e938600.yml` | CI/CD pipeline that builds and deploys on every push to `main` |
+| Log Analytics workspace | `law-spotify-web` | Central log store — every log source below is routed here (see [§9](#9-logging-and-security-monitoring-microsoft-sentinel)) |
+| Application Insights | `appi-spotify-web` | Client-side telemetry: page views, requests, browser/OS/geo of visitors |
+| Microsoft Sentinel | (enabled on `law-spotify-web`) | SIEM on top of the workspace — incidents, analytics rules, workbook |
 
 **Live endpoints:**
 - Site: `https://nice-pond-03e938600.7.azurestaticapps.net`
@@ -476,4 +488,219 @@ az staticwebapp hostname set --name spotify-web --resource-group rg-spotify-web-
 Deleting a hostname only detaches it from the SWA (and revokes its managed cert) — it
 does not affect the underlying `*.azurestaticapps.net` hostname or delete the DNS
 records at the registrar, which must be removed there separately.
+
+---
+
+## 9. Logging and security monitoring (Microsoft Sentinel)
+
+The site stayed on the serverless Static Web App + Cosmos DB architecture (a VM-based
+migration was attempted and abandoned — every region/SKU combination available to this
+subscription hit quota or capacity errors; see [§7](#7-notes-and-gotchas)). Instead of
+moving compute, a full logging/SIEM layer was added **on top of** the existing
+resources so the same three questions a VM+syslog+Sentinel setup would answer are still
+answered here: *what happened, who did it, and where were they accessing from*.
+
+### 9.1 Why this is possible without a VM
+
+Microsoft Sentinel is not tied to virtual machines — it is a SIEM that runs on top of
+**any** Log Analytics workspace. A workspace can ingest logs from many source types
+(platform diagnostic logs, Activity Log, Application Insights, Defender for Cloud
+alerts, custom API pushes, VM agents, etc.). This project uses four of those sources —
+none of them require a VM:
+
+```mermaid
+flowchart TB
+    subgraph Sources[Log sources]
+        Cosmos[Cosmos DB diagnostic settings]
+        Activity[Subscription Activity Log]
+        AppIns[Application Insights JS SDK]
+        Defender[Defender for Cosmos DB alerts]
+    end
+    Sources --> LAW[(Log Analytics workspace: law-spotify-web)]
+    LAW --> Sentinel[Microsoft Sentinel]
+    Sentinel --> Connectors[Data connectors]
+    Sentinel --> Rules[Analytics rules]
+    Sentinel --> Workbook[Custom workbook]
+    Rules --> Incidents[Incidents]
+```
+
+### 9.2 The central log sink — Log Analytics workspace
+
+| Property | Value |
+|---|---|
+| Name | `law-spotify-web` |
+| Resource group | `rg-spotify-web-demo` |
+| Region | `southeastasia` |
+| SKU | `PerGB2018` (pay-per-GB ingested) |
+| Retention | 30 days |
+
+Everything below writes into this one workspace. It is the thing Sentinel is
+"onboarded onto" — Sentinel itself has no separate storage, it queries this workspace's
+tables with KQL.
+
+```powershell
+az provider register --namespace Microsoft.OperationalInsights
+az monitor log-analytics workspace create -g rg-spotify-web-demo -n law-spotify-web \
+  --location southeastasia --sku PerGB2018 --retention-time 30
+```
+
+### 9.3 Onboarding Microsoft Sentinel
+
+Sentinel is enabled "onto" a workspace, not created as its own resource. This required
+two REST calls (the `az sentinel` CLI extension's shorthand for this was unreliable):
+
+```powershell
+az provider register --namespace Microsoft.SecurityInsights
+az provider register --namespace Microsoft.OperationsManagement
+
+# 1. Classic "solution" resource — required before onboarding will succeed
+az rest --method put `
+  --uri "https://management.azure.com/subscriptions/<SUB_ID>/resourceGroups/rg-spotify-web-demo/providers/Microsoft.OperationsManagement/solutions/SecurityInsights%28law-spotify-web%29?api-version=2015-11-01-preview" `
+  --body "@solution-body.json"
+
+# 2. Onboarding state — must use api-version 2024-03-01, not 2023-11-01
+az rest --method put `
+  --uri "https://management.azure.com/subscriptions/<SUB_ID>/resourceGroups/rg-spotify-web-demo/providers/Microsoft.OperationsInsights/workspaces/law-spotify-web/providers/Microsoft.SecurityInsights/onboardingStates/default?api-version=2024-03-01" `
+  --body "{}"
+```
+
+### 9.4 Log source 1 — Cosmos DB diagnostic logs (what happened to the data)
+
+A diagnostic setting streams Cosmos DB's own audit/operation logs into the workspace:
+
+```powershell
+az provider register --namespace Microsoft.Insights
+az monitor diagnostic-settings create --name diag-to-sentinel `
+  --resource <cosmos-account-resource-id> `
+  --workspace law-spotify-web `
+  --logs '[{"category":"DataPlaneRequests","enabled":true},{"category":"QueryRuntimeStatistics","enabled":true},{"category":"ControlPlaneRequests","enabled":true},{"category":"PartitionKeyRUConsumption","enabled":true}]' `
+  --metrics '[{"category":"Requests","enabled":true}]'
+```
+
+Data lands in **resource-specific tables** (not the generic `AzureDiagnostics` table):
+`CDBDataPlaneRequests`, `CDBQueryRuntimeStatistics`, `CDBControlPlaneRequests`,
+`CDBPartitionKeyRUConsumption`. Useful columns: `StatusCode`, `ClientIpAddress`,
+`OperationName`, `DatabaseName`, `CollectionName`. This answers "who queried/wrote the
+subscriptions container, from what IP, and did it succeed or fail".
+
+### 9.5 Log source 2 — Application Insights (who is using the app, and from where)
+
+`appi-spotify-web` is a workspace-based Application Insights resource linked to
+`law-spotify-web` (its data lives in the same workspace, in `App*` tables).
+
+- **Frontend**: [`js/appInsights.js`](js/appInsights.js) is loaded as the first
+  `<script>` in `<head>` on every page (`index.html`, `download.html`, `premium.html`,
+  `help.html`, `Spotify-songs/songs.html`). It dynamically loads the Application
+  Insights JS SDK from `https://js.monitor.azure.com/scripts/b/ai.2.min.js`,
+  initializes it with the connection string, and calls `trackPageView()`. This is what
+  captures real visitor data — browser, OS, city/country, and which page they hit —
+  into the `AppPageViews` table (columns: `ClientIP`, `ClientCity`,
+  `ClientCountryOrRegion`, `ClientBrowser`, `ClientOS`, `Url`).
+- **Backend**: the connection string is also set as a Static Web App app setting
+  (`APPLICATIONINSIGHTS_CONNECTION_STRING`) so the managed Functions API can emit
+  server-side request telemetry into `AppRequests` if/when it's instrumented.
+
+```powershell
+az monitor app-insights component create --app appi-spotify-web -g rg-spotify-web-demo `
+  --location southeastasia --workspace law-spotify-web --kind web --application-type web
+
+az staticwebapp appsettings set --name spotify-web -g rg-spotify-web-demo `
+  --setting-names APPLICATIONINSIGHTS_CONNECTION_STRING="<connection-string>"
+```
+
+### 9.6 Log source 3 — Subscription Activity Log (who changed a resource)
+
+A subscription-level diagnostic setting sends the Azure control-plane audit trail
+(every ARM operation — who created/deleted/modified a resource, and from what IP) into
+the same workspace, landing in the `AzureActivity` table (`Caller`, `CallerIpAddress`,
+`OperationNameValue`, `ActivityStatusValue`, `ResourceGroup`, `ResourceId`).
+
+```powershell
+az monitor diagnostic-settings subscription create --name activity-to-sentinel `
+  --location southeastasia --workspace law-spotify-web `
+  --logs '[{"category":"Administrative","enabled":true},{"category":"Security","enabled":true},{"category":"ServiceHealth","enabled":true},{"category":"Alert","enabled":true},{"category":"Recommendation","enabled":true},{"category":"Policy","enabled":true},{"category":"Autoscale","enabled":true},{"category":"ResourceHealth","enabled":true}]'
+```
+
+### 9.7 Log source 4 — Defender for Cosmos DB (security alerts)
+
+Defender for Cloud's Cosmos DB plan (`Standard` tier, 30-day trial) watches the account
+for anomalous access patterns (e.g. unusual query patterns, potential SQL injection,
+access from Tor exit nodes) and raises alerts into the `SecurityAlert` table.
+
+```powershell
+az security pricing create -n CosmosDbs --tier Standard
+```
+
+These alerts are what feed Sentinel's `SecurityIncidentCreation` rule below — a real
+alert here becomes a Sentinel **incident** automatically, not just a row in a table.
+
+### 9.8 Sentinel data connectors
+
+Two connectors bring platform-level data (as opposed to app-level data, which arrives
+directly via the diagnostic settings above) into Sentinel's UI:
+
+- **Defender for Cloud connector** (`AzureSecurityCenter` kind) — surfaces
+  `SecurityAlert` rows as native Sentinel alerts/incidents.
+- **Azure Activity connector** — this is really just confirming the subscription
+  diagnostic setting from [§9.6](#96-log-source-3--subscription-activity-log-who-changed-a-resource)
+  is flowing; Sentinel reads `AzureActivity` directly once it exists in the workspace.
+
+### 9.9 Sentinel analytics rules (the actual detections)
+
+Three rules were created (via `az rest`, since the CLI extension's shorthand couldn't
+express the required fields for these rule types):
+
+| Rule | Kind | What it does |
+|---|---|---|
+| `asc-incident-rule` | `MicrosoftSecurityIncidentCreation` | Auto-creates a Sentinel incident for every Defender for Cloud alert on Cosmos DB |
+| `cosmos-failed-requests` | `Scheduled` (hourly) | KQL over `CDBDataPlaneRequests`: flags >20 failed requests (`StatusCode >= 400`) in a 5-minute bucket, grouped by `OperationName`/`ClientIpAddress` — catches brute-force/scanning behavior against the API |
+| `sensitive-resource-change` | `Scheduled` (hourly) | KQL over `AzureActivity`: flags successful write/delete/regenerate-key operations on the Cosmos DB account or the Static Web App, surfacing `Caller`/`CallerIpAddress` — catches unexpected config or key changes |
+
+### 9.10 Sentinel workbook — "MySp0tify - Usage and Access Monitoring"
+
+A single workbook ties the sources together into 5 KQL-based views: page views by
+country/city, API requests and failures over time, Cosmos DB requests and failures,
+who is administering the resources (from `AzureActivity`), and Defender for Cloud
+security alerts.
+
+### 9.11 Cost control
+
+A monthly budget guards against runaway ingestion/retention cost:
+
+| Property | Value |
+|---|---|
+| Name | `budget-spotify-web-monitoring` |
+| Scope | `rg-spotify-web-demo` |
+| Amount | $20/month |
+| Alerts | 80% of actual spend, 100% of forecasted spend, emailed |
+
+### 9.12 How to view the logs and alerts in the Azure Portal
+
+1. **Raw logs / KQL**: Azure Portal → `law-spotify-web` → **Logs**. Example queries:
+   ```kql
+   AppPageViews | order by TimeGenerated desc | take 50
+   CDBDataPlaneRequests | where StatusCode >= 400 | order by TimeGenerated desc
+   AzureActivity | order by TimeGenerated desc | take 50
+   ```
+2. **Sentinel incidents**: Portal → **Microsoft Sentinel** → select `law-spotify-web` →
+   **Incidents**.
+3. **Sentinel workbook**: Sentinel → **Workbooks** → "MySp0tify - Usage and Access
+   Monitoring" → **View saved workbook**.
+4. **Analytics rules**: Sentinel → **Analytics** → lists the 3 rules above; each can be
+   edited, disabled, or have its query/threshold tuned.
+5. **Data connectors**: Sentinel → **Data connectors** — shows the Defender for Cloud
+   connector status and the Activity Log flow.
+6. **Defender for Cloud alerts**: Portal → **Microsoft Defender for Cloud** →
+   **Security alerts** (also visible as `SecurityAlert` rows in the workspace and as
+   Sentinel incidents via the `asc-incident-rule`).
+7. **Cost/budget**: Portal → **Cost Management + Billing** → **Budgets** →
+   `budget-spotify-web-monitoring`.
+
+### 9.13 Known limitation
+
+`CDBDataPlaneRequests` can take up to 15 minutes to show data after a request due to
+normal diagnostic-log ingestion latency — an empty result immediately after testing the
+API does not mean the pipeline is broken. `SecurityAlert`/`SecurityIncident` are
+expected to be empty until Defender for Cloud actually detects something anomalous;
+this is normal, not a misconfiguration.
 

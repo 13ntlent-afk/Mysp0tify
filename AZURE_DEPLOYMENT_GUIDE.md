@@ -1021,6 +1021,16 @@ container options they come from [`nginx.conf`](./nginx.conf).
   Log Analytics workspace.
 - **AKS**: `kubectl -n spotify-web logs deploy/spotify-web`, or enable Container Insights.
 
+**Full security/usage logging and Microsoft Sentinel (this deployment):** the live
+Option A deployment (SWA + Cosmos DB, no VM) has a complete logging + SIEM layer
+already wired up — Log Analytics workspace `law-spotify-web`, Application Insights
+(`appi-spotify-web`, frontend page-view/geo tracking), Cosmos DB diagnostic logs,
+subscription Activity Log, Defender for Cosmos DB, and Microsoft Sentinel with
+analytics rules and a workbook. See
+[AZURE_DEPLOYMENT_LOG.md §9](./AZURE_DEPLOYMENT_LOG.md#9-logging-and-security-monitoring-microsoft-sentinel)
+for the full architecture, resource names, and how to view logs/incidents in the
+portal.
+
 ### 11.3 Cost control
 
 ```powershell
