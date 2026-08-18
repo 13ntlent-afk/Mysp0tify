@@ -1,297 +1,455 @@
 # MySp0tify — Architecture & Monitoring Presentation
 
-A single reference document for presenting this project end-to-end: what it is, how a
-request flows through every layer, why each technology was chosen over the
-alternatives, how the custom domain works, how deployment is automated, and a
-placeholder section to hand off to the live demo.
-
-> **What this project is.** MySp0tify (`sp0tify`) is a controlled **phishing-simulation
-> / security-awareness training site** — a pixel-level clone of Spotify's "Premium"
-> upsell and subscription flow, built to be indistinguishable from the real thing at the
-> UI level. Its purpose is to capture what a real phishing page would capture (name,
-> email, and *masked* card details — never a real usable card number), while giving a
-> blue team full visibility over **who interacted with it, from where, and when**, via
-> Microsoft Sentinel. Every architectural decision in this document is made in service
-> of that dual goal: convincing front end, fully observable back end.
-
----
-
-## Table of contents
-
-1. [Architecture overview](#1-architecture-overview)
-2. [End-to-end request flow](#2-end-to-end-request-flow-client--frontend--backend--cosmos-db--logging)
-3. [Tech stack](#3-tech-stack)
-4. [Why serverless instead of an always-on server](#4-why-serverless-instead-of-an-always-on-server)
-5. [Why Node.js instead of the traditional LAMP/WAMP stack](#5-why-nodejs-instead-of-the-traditional-lampwamp-stack)
-6. [Why this is more manageable and monitorable](#6-why-this-is-more-manageable-and-monitorable)
-7. [How the custom FQDN works](#7-how-the-custom-fqdn-works)
-8. [How deployment works — GitHub Actions CI/CD](#8-how-deployment-works--github-actions-cicd)
-9. [Demonstration](#9-demonstration)
+> **Purpose of this document:** a script-ready deck outline for presenting MySp0tify —
+> a **controlled phishing-simulation / security-awareness training site** styled as a
+> Spotify clone — to a technical or semi-technical audience (security team, IT
+> leadership, training stakeholders). Every section below has a **diagram**, a
+> **"what you're looking at"** table/summary, and a **narrative** block written in
+> first person that you can read almost verbatim while presenting, or use as a
+> script outline to speak from naturally.
+>
+> ⚠️ **Ethics/legal framing, say this early and often:** this project exists to
+> *simulate* a credential/card-harvesting phishing page in a closed, authorized
+> environment so an organization can train users and test detection tooling
+> (Sentinel/Defender/App Insights). It is not deployed against the public with
+> intent to defraud, and card/credential fields are masked before storage. If your
+> audience's context is different (e.g., this should be framed as a plain demo app
+> instead of a phishing simulation), swap the wording in this callout box only —
+> nothing else in the document depends on the phrase "phishing."
 
 ---
 
-## 1. Architecture overview
+## 0. How to use this document
+
+Each of the 9 sections below is built the same way:
+
+1. A **Mermaid diagram** — render it directly in VS Code, GitHub, or any Mermaid
+   live-editor for the slide.
+2. A **"Reading the diagram"** walkthrough — a plain-language, node-by-node /
+   arrow-by-arrow explanation. This is the part to memorize or paraphrase live.
+3. A **Narrative / speaker script** — a short paragraph written as if you were
+   already talking, meant to bridge from the previous slide and set up the next.
+
+A companion file, **`PRESENTATION_QA.md`**, holds anticipated audience questions
+with prepared answers — review it right before presenting.
+
+---
+
+## 1. Architecture Overview
 
 ```mermaid
-flowchart LR
-    subgraph Visitor
-        Browser["Visitor's browser"]
+flowchart TB
+    subgraph Client["Visitor's Browser"]
+        UI[Static HTML/CSS/JS UI]
     end
 
-    subgraph Edge["Entry points (FQDN options)"]
-        Custom["my.sp0tify.eu.org<br/>(pending eu.org approval)"]
-        Netlify["sp0t1fy.netlify.app<br/>(proxy front door)"]
-        Default["nice-pond-...azurestaticapps.net<br/>(default hostname)"]
+    subgraph Edge["Edge / Front Door (optional proxy layer)"]
+        Netlify[Netlify\nsp0t1fy.netlify.app\nnetlify.toml reverse-proxy]
+        CF[Cloudflare DNS\nsp0tify.eu.org zone]
     end
 
-    subgraph Azure["Azure — the real application"]
-        SWA["Static Web App: spotify-web<br/>(global CDN + free TLS)"]
-        Func["Managed Azure Functions API<br/>/api/subscriptions"]
-        Cosmos[("Cosmos DB<br/>cosmos-spotify-web-prod")]
-        AI["Application Insights<br/>appi-spotify-web"]
-        LAW[("Log Analytics<br/>law-spotify-web")]
-        Defender["Defender for Cosmos DB"]
-        Sentinel["Microsoft Sentinel"]
+    subgraph Azure["Microsoft Azure"]
+        SWA[Azure Static Web App\nnice-pond-03e938600.7.azurestaticapps.net]
+        Func[Managed Azure Functions API\n/api/subscriptions]
+        Cosmos[(Azure Cosmos DB\nspotify-web / subscriptions)]
+        AI[Application Insights\nappi-spotify-web]
+        LAW[Log Analytics Workspace\nlaw-spotify-web]
+        Sentinel[Microsoft Sentinel]
+        Defender[Microsoft Defender for Cloud]
     end
 
-    Browser --> Custom & Netlify & Default
-    Custom -.->|CNAME/A, once approved| SWA
-    Netlify -->|reverse proxy, netlify.toml| SWA
-    Default --> SWA
-
-    SWA -->|serves static assets| Browser
+    UI -- "HTTPS page load" --> Netlify
+    Netlify -- "reverse-proxy /* → Azure" --> SWA
+    CF -. "future: custom domain\nmy.sp0tify.eu.org" .-> SWA
+    UI -- "AppInsights SDK\n(direct, bypasses proxy)" --> AI
+    UI -- "POST /api/subscriptions" --> Netlify
+    Netlify --> Func
     SWA --> Func
     Func --> Cosmos
-    Browser -->|App Insights JS SDK, direct| AI
-    Cosmos -->|diagnostic settings| LAW
+    Func -- "context.log / context.error" --> LAW
     AI --> LAW
-    Defender -->|SecurityAlert| LAW
     LAW --> Sentinel
+    Defender -. "security recommendations" .-> LAW
 ```
 
-| Layer | Resource | Role |
-|---|---|---|
-| Entry point | Custom FQDN / Netlify proxy / default hostname | Whatever URL a visitor types, all roads lead to the same app |
-| Hosting | Azure Static Web App `spotify-web` | Serves HTML/CSS/JS from a global CDN, free managed HTTPS |
-| API | Managed Azure Functions (`api/index.js`) | Validates and stores subscription submissions |
-| Database | Cosmos DB `cosmos-spotify-web-prod` | Serverless NoSQL store for captured submissions |
-| Telemetry | Application Insights `appi-spotify-web` | Client-side visit tracking (who/where/what device) |
-| Log sink | Log Analytics `law-spotify-web` | Central store all of the above feed into |
-| Detection | Defender for Cosmos DB + Microsoft Sentinel | Turns raw logs into alerts and incidents |
+### Reading the diagram
+
+- **Top box (Client):** the only thing the visitor's browser holds is plain
+  HTML/CSS/JS — there is no app to install, nothing "runs" on their machine
+  beyond a normal web page.
+- **Edge box (Netlify + Cloudflare):** this is the "front door." Today, the
+  live, working front door is **Netlify** (`sp0t1fy.netlify.app`), configured
+  purely as a reverse proxy via `netlify.toml` — it owns no files, it just
+  relays every request straight through to Azure. Cloudflare is drawn as a
+  dotted/future line because it's the DNS host for `sp0tify.eu.org`, the
+  permanent custom domain that is still pending eu.org's manual registration
+  approval; once approved it becomes an *additional* way in, not a
+  replacement.
+- **Azure box:** this is where all real work happens — the Static Web App
+  serves the HTML/CSS/JS, the co-located Azure Functions API handles the one
+  server-side endpoint (`/api/subscriptions`), Cosmos DB stores submitted
+  records, and three monitoring services (Application Insights, Log Analytics,
+  Sentinel) plus Defender for Cloud observe everything.
+- **The two arrows leaving the browser directly:** notice the browser talks to
+  Application Insights *directly*, not through Netlify. That's deliberate —
+  telemetry about who's visiting and from where is unaffected even if the
+  proxy layer changes or goes down.
+
+### Narrative / speaker script
+
+> "At the very top we have nothing but a normal browser loading a normal web
+> page — there's no client software, no download, just HTML. Every request
+> that page makes goes through one of two doors: today, that door is Netlify,
+> which I'll explain shortly is doing nothing except forwarding traffic
+> straight to Azure. Everything that actually *does* something — serving
+> pages, running the one API endpoint, storing data, and watching what's
+> happening — lives entirely inside Azure. And critically, our monitoring
+> pipeline doesn't depend on that front door: the browser reports directly to
+> Application Insights, so even if we swap Netlify for Cloudflare or a custom
+> domain tomorrow, our visibility into who's using the site doesn't change."
 
 ---
 
-## 2. End-to-end request flow: client → frontend → backend → Cosmos DB → logging
+## 2. End-to-End Request Flow (Client → Frontend → Backend → Cosmos DB → Logging)
 
 ```mermaid
 sequenceDiagram
-    participant U as Visitor (browser)
-    participant SWA as Static Web App (CDN)
-    participant JS as pay-plan / subscribe-modal (Web Components)
-    participant AI as Application Insights
-    participant Func as Azure Functions API
-    participant DB as Cosmos DB
+    actor V as Visitor
+    participant Browser
+    participant Netlify as Netlify Proxy
+    participant SWA as Azure Static Web App
+    participant Func as Azure Function\n(/api/subscriptions)
+    participant Val as validation.js
+    participant Cosmos as Cosmos DB
+    participant AI as App Insights
     participant LAW as Log Analytics
-    participant Sent as Microsoft Sentinel
 
-    U->>SWA: GET / (or /premium.html)
-    SWA-->>U: HTML/CSS/JS (site looks identical to the real Spotify flow)
-    U->>AI: trackPageView() — fires the instant the page loads
-    AI->>LAW: AppPageViews row (browser, OS, city, country, URL)
+    V->>Browser: Opens sp0t1fy.netlify.app
+    Browser->>Netlify: GET /
+    Netlify->>SWA: proxy GET / (force=true)
+    SWA-->>Browser: index.html + CSS/JS
+    Browser->>AI: trackPageView() (direct, bypasses proxy)
+    AI->>LAW: ingest telemetry
 
-    U->>JS: Clicks a plan's "START USING" button
-    JS->>JS: <pay-plan> dispatches CustomEvent "subscribe" (bubbles)
-    JS->>JS: premium.html catches it, opens <subscribe-modal>
-    U->>JS: Fills name, email, card fields, clicks Subscribe
-    JS->>JS: Card number/CVV are masked client-side (brand + last 4 only)
-    JS->>Func: POST /api/subscriptions { firstName, email, plan, cardLast4, ... }
-
-    Func->>Func: validateSubscription() — rejects malformed/unknown-plan payloads
-    Func->>DB: Query existing subscription (email + plan)
-    alt already subscribed
-        DB-->>Func: existing record
-        Func-->>JS: 200 { alreadySubscribed: true }
-    else new submission
-        Func->>DB: Create subscription document
-        DB-->>Func: saved record
-        Func-->>JS: 201 { id, plan, createdAt }
+    V->>Browser: Clicks "Subscribe", fills plan form
+    Browser->>Browser: <subscribe-modal> masks card info client-side
+    Browser->>Netlify: POST /api/subscriptions (JSON body)
+    Netlify->>Func: proxy POST (X-Forwarded-For: real visitor IP)
+    Func->>Func: getClientIp() reads X-Forwarded-For
+    Func->>Val: validateSubscription(body)
+    alt validation fails
+        Val-->>Func: {valid:false, errors}
+        Func-->>Browser: 400 + error details
+        Func->>LAW: context.log("Validation failed... from <ip>")
+    else validation passes
+        Val-->>Func: {valid:true, value}
+        Func->>Cosmos: findSubscription(email, plan)
+        alt already subscribed
+            Cosmos-->>Func: existing record
+            Func-->>Browser: 200 {alreadySubscribed:true}
+        else new subscription
+            Func->>Cosmos: createSubscription(record)
+            Cosmos-->>Func: saved record
+            Func-->>Browser: 201 {id, plan, createdAt}
+        end
+        Func->>LAW: context.log("Stored subscription... from <ip>")
     end
-    Func->>LAW: context.log(...) incl. resolved client IP (X-Forwarded-For aware)
-
-    DB->>LAW: Diagnostic logs (CDBDataPlaneRequests, query stats, RU consumption)
-    LAW->>Sent: Continuously ingested
-    Sent->>Sent: Analytics rules evaluate on schedule
-    Note over Sent: cosmos-failed-requests, sensitive-resource-change,<br/>asc-incident-rule (Defender alerts)
-    Sent-->>Sent: Incident created if a rule threshold is crossed
 ```
 
-**What is captured, and what deliberately is not:**
+### Reading the diagram
 
-| Data | Captured? | Where |
+- **Two separate flows are shown, stacked:** the top half is just loading the
+  page; the bottom half is the actual form submission. Presenting them
+  together shows the audience that *browsing* is tracked one way (App
+  Insights, automatic) and *submitting data* is tracked another way (function
+  logs, explicit).
+- **`getClientIp()`** is the small but important detail worth pointing at:
+  because Netlify sits in front of Azure, the Function would otherwise see
+  Netlify's IP address on every request. This helper reads the
+  `X-Forwarded-For` header Netlify adds, so the log line still shows the real
+  visitor's IP.
+- **`validateSubscription`** is a pure function with no side effects — it
+  either rejects the payload (missing fields, bad card format, etc.) or
+  returns a cleaned value. Card data is masked (brand + last 4 + expiry only)
+  *before* this point ever reaches storage.
+- **The "already subscribed" branch** exists so resubmitting the same
+  plan/email doesn't create duplicate Cosmos DB rows — it's idempotent by
+  design, keyed on `email` as the partition key.
+- **Every branch ends in a `context.log`/`context.error` call**, meaning
+  success, duplicate, and failure paths are all observable in Log Analytics —
+  there's no "silent" outcome.
+
+### Narrative / speaker script
+
+> "Let's follow one real click. A visitor opens the site — that's a simple
+> proxy hop through Netlify to Azure, and the moment the page renders, the
+> browser independently tells Application Insights 'a page view just
+> happened,' completely separate from the proxy. Now they fill out the
+> subscribe form. Before anything leaves the browser, the card details are
+> already masked client-side — we only ever transmit brand, last four digits,
+> and expiry, never the full number. That request goes back through the same
+> proxy to the same Azure Function, which first figures out who really sent
+> it — using the X-Forwarded-For header, since otherwise every log line would
+> just say 'Netlify.' Then it validates the payload, checks Cosmos DB to avoid
+> duplicate rows, and finally either fails, hits an existing record, or
+> creates a new one — logging every one of those three outcomes with the
+> visitor's real IP attached, so if we needed to reconstruct 'who tried what
+> and when,' we can."
+
+---
+
+## 3. Tech Stack
+
+| Layer | Technology | Why it's here |
 |---|---|---|
-| First/last name, email, chosen plan | ✅ Yes | Cosmos DB `subscription` container |
-| Card brand, last 4 digits, expiry | ✅ Yes (masked only) | Cosmos DB |
-| Full card number / CVV | ❌ Never leaves the browser in full — only derived/masked fields are sent | — |
-| Visitor IP, city, country, browser, OS, page visited | ✅ Yes | Application Insights → `AppPageViews` |
-| Which admin changed which Azure resource, from what IP | ✅ Yes | Subscription Activity Log → `AzureActivity` |
-| Anomalous access patterns (e.g. suspicious query bursts) | ✅ Yes | Defender for Cosmos DB → `SecurityAlert` → Sentinel incident |
+| Frontend | Static HTML5 + CSS3 + vanilla JS + Web Components (`<pay-plan>`, `<subscribe-modal>`) | No build step, no framework lock-in, deploys as flat files |
+| Hosting | Azure Static Web Apps (Free tier) | Free SSL, free global CDN, native GitHub Actions integration |
+| Proxy / alt. hostname | Netlify (`sp0t1fy.netlify.app`), config in `netlify.toml` | Instant free hostname while custom domain approval is pending |
+| Backend | Azure Functions v4 (Node.js 20, `@azure/functions` programming model) | Serverless, scales to zero, billed only per invocation |
+| Database | Azure Cosmos DB (NoSQL API), partitioned on `/email` | Serverless-friendly, low-latency point reads by partition key |
+| Telemetry | Application Insights Web SDK (`js/appInsights.js`) | Auto page-view, geo, browser/device tracking, zero backend code |
+| Logging | Azure Functions `context.log`/`context.error` → Log Analytics Workspace | Structured, queryable via KQL, feeds Sentinel |
+| SIEM | Microsoft Sentinel over `law-spotify-web` | Correlation rules, alerts, incident workbooks |
+| Posture mgmt | Microsoft Defender for Cloud | Free-tier security recommendations across the resource group |
+| CI/CD | GitHub Actions (`azure-static-web-apps-nice-pond-03e938600.yml`) | Auto build+deploy on every push to `main` |
+| DNS (pending) | Cloudflare (`sp0tify.eu.org` zone) + eu.org registration | Free custom domain, once eu.org completes manual approval |
+
+### Narrative / speaker script
+
+> "Nothing here is exotic on purpose. Every layer was picked because it's
+> free or near-free at this scale, and because it's managed — meaning
+> Microsoft (or Netlify, or Cloudflare) handles patching, scaling, and
+> availability, and we focus purely on the app and the monitoring around it."
 
 ---
 
-## 3. Tech stack
-
-| Layer | Technology | Why |
-|---|---|---|
-| Frontend | Vanilla HTML/CSS/JS + native **Web Components** (`customElements.define`, Shadow DOM) | No framework build step; components (`<pay-plan>`, `<subscribe-modal>`, `<custom-header>`) are self-contained, reusable, and load instantly — matches the real Spotify site's snappy feel with zero bundler complexity |
-| Backend | **Node.js** on **Azure Functions** (`@azure/functions` v4 programming model) | Same language on client and server end-to-end; functions are short-lived, stateless, and billed per-execution |
-| Database | **Azure Cosmos DB** (serverless mode, NoSQL/SQL API) | Schema-flexible documents (a subscription record), automatic partitioning by `/email`, pay-per-request billing |
-| Hosting | **Azure Static Web Apps** | Global CDN, free auto-managed TLS, integrated managed Functions, built-in GitHub Actions deployment |
-| Telemetry | **Application Insights** (JS SDK) | Real browser-side analytics: who visited, from where, on what device — with zero backend instrumentation required |
-| Log platform | **Azure Log Analytics** (`law-spotify-web`) | Single KQL-queryable store that every other monitoring piece writes into |
-| SIEM | **Microsoft Sentinel** | Turns raw logs into correlated incidents, with scheduled detection rules and a custom workbook |
-| Cloud security posture | **Microsoft Defender for Cloud** (Cosmos DB plan) | Managed threat detection for the database tier, no custom anomaly-detection code needed |
-| CI/CD | **GitHub Actions** | Already where the code lives; zero extra CI system to run or pay for |
-| DNS / FQDN | **eu.org** (free registrar) + **Cloudflare** (free DNS host) + **Netlify** (proxy fallback) | $0 custom domain path — see [§7](#7-how-the-custom-fqdn-works) |
-
----
-
-## 4. Why serverless instead of an always-on server
-
-| Concern | Always-on server (VM / App Service always-on) | Serverless (this project) |
-|---|---|---|
-| Cost when idle | Billed 24/7 whether or not anyone visits | $0 — Static Web Apps Free tier, Cosmos DB serverless bills per request |
-| Patching / OS maintenance | You own OS updates, security patches, package upgrades | None — Azure manages the entire runtime |
-| Scaling | Manual (resize VM, add instances) or costly auto-scale rules | Automatic and instantaneous — the CDN and Functions scale transparently |
-| Attack surface | Full OS + web server + network stack to harden (ports, SSH, firewall rules) | No OS to reach at all; only the app-layer HTTP surface exists |
-| Time to first deploy | Provision VM/App Service, install runtime, configure web server, open ports | `az staticwebapp create` — minutes |
-| Relevant history in this project | A VM migration was attempted and **abandoned** after every available region/SKU combination hit Azure quota/capacity errors on this subscription | N/A — was never a blocker, since no VM capacity is needed |
-
-For a project whose entire point is to be watched closely rather than to run a large workload, serverless removes an entire category of operational risk (unpatched OS, exposed management ports, idle-cost waste) while still delivering the same functional result.
-
----
-
-## 5. Why Node.js instead of the traditional LAMP/WAMP approach
-
-| | LAMP/WAMP (Linux/Windows + Apache + MySQL + PHP) | This project (Node.js + Cosmos DB + Functions) |
-|---|---|---|
-| Language boundary | PHP on the server, JavaScript on the client — two languages, two mental models | JavaScript/JSON on **both** client and server — the same subscription payload shape is used, validated, and stored without translation |
-| Web server | Apache/Nginx must be installed, configured, and kept patched | No web server to manage — the platform (Static Web Apps) is the web server |
-| Database | MySQL requires a fixed schema (`ALTER TABLE` for every new field) | Cosmos DB stores JSON documents directly — the `subscription` record's shape can evolve without a migration step |
-| Process model | Apache/PHP typically run persistent worker processes even when idle | Functions execute only per-request and then stop — no idle process to secure or patch |
-| Deployment unit | Sync files to a server (FTP/SSH), restart services | `git push` → GitHub Actions builds and deploys automatically |
-| Local dev parity | Needs XAMPP/WAMP/MAMP or a VM to approximate production | `swa start` / `func start` runs the exact same Functions runtime locally as production |
-
-Node.js was chosen specifically so the **same JSON validation logic** (`api/validation.js`) that defines what a valid subscription payload looks like is shared conceptually between the front-end form and the back-end handler — there's no PHP-side re-validation of data shapes already defined in JS, and no SQL schema to keep in sync with form fields.
-
----
-
-## 6. Why this is better, more manageable, and more monitorable
-
-**Manageable:**
-- One `git push` deploys frontend + API together (see [§8](#8-how-deployment-works--github-actions-cicd)) — no separate release process for the database, web server, or app.
-- No servers to patch, reboot, or lose to a failed OS update.
-- Infrastructure is fully described by a handful of `az` commands (documented in `AZURE_DEPLOYMENT_LOG.md`), so the whole stack can be torn down and rebuilt from scratch.
-
-**Monitorable — this is the core requirement for a phishing-simulation tool:**
-
-| Question a blue team needs answered | How this stack answers it |
-|---|---|
-| *Who visited the page, and from where?* | Application Insights `AppPageViews` — browser, OS, city, country, per visit, captured client-side, unaffected by any front-door/proxy in front of it |
-| *Who submitted the fake subscription form?* | Cosmos DB `subscription` container — name, email, plan, masked card |
-| *Is someone hammering the API or scanning it?* | Sentinel analytics rule `cosmos-failed-requests` — flags >20 failed requests in 5 minutes, grouped by IP/operation |
-| *Did anyone change a resource's configuration or keys?* | Sentinel analytics rule `sensitive-resource-change` — watches `AzureActivity` for writes/deletes/key-regeneration |
-| *Is there an active security threat against the database?* | Defender for Cosmos DB → `SecurityAlert` → auto-promoted to a Sentinel incident via `asc-incident-rule` |
-| *What's the overall picture at a glance?* | The custom Sentinel workbook — 5 panels combining all of the above |
-| *Are we about to overspend?* | Budget alert `budget-spotify-web-monitoring` — 80%/100% thresholds, emailed |
-
-Every one of these is backed by a managed Azure service, not custom logging code — which is also why it's low-maintenance: there is no log-shipping agent, no self-hosted ELK/Grafana stack, and no syslog daemon to keep alive.
-
----
-
-## 7. How the custom FQDN works
-
-The project intentionally never depended on owning an expensive domain — it layers three
-free/low-cost pieces to get a real, presentable hostname:
-
-```mermaid
-flowchart TD
-    A["eu.org<br/>free registrar — provides only NS delegation"] -->|delegates zone to| B["Cloudflare (Free plan)<br/>hosts the actual DNS records"]
-    B -->|CNAME 'my' → SWA hostname| C["Azure Static Web App<br/>spotify-web"]
-    D["Netlify (Free plan)<br/>sp0t1fy.netlify.app"] -->|reverse-proxy redirect, netlify.toml| C
-    E["Default hostname<br/>nice-pond-...azurestaticapps.net"] --> C
-```
-
-1. **eu.org** — a volunteer-run, free domain registrar. It only ever provides **domain
-   delegation (NS records)** — no other record types — so a separate DNS host is
-   required in front of it. `sp0tify.eu.org` was requested here, with the site itself
-   living at the subdomain `my.sp0tify.eu.org`.
-2. **Cloudflare (Free)** — hosts the actual DNS zone once eu.org delegates to
-   Cloudflare's nameservers. A `CNAME` record points `my` at the Static Web App's
-   default hostname. DNS-only (grey cloud), not proxied, since Azure already terminates
-   its own TLS/CDN.
-3. **Azure Static Web Apps custom domain binding** — once the CNAME resolves, `az
-   staticwebapp hostname set --hostname my.sp0tify.eu.org` binds it, and Azure
-   auto-issues a free managed TLS certificate.
-4. **Netlify proxy fallback** (`sp0t1fy.netlify.app`) — because eu.org's approval is a
-   manual, unpredictable human-review step, a Netlify site with a single `netlify.toml`
-   redirect rule was added as an **instantly available** front door in the meantime. It
-   holds no files of its own — every request is forwarded straight through to the real
-   Azure-hosted app, including the API and, transparently, the JS-based telemetry.
-5. **Default hostname** (`nice-pond-...azurestaticapps.net`) — always works, no DNS
-   dependency at all; useful as a guaranteed fallback during any of the above transitions.
-
-All entry points converge on the exact same application — nothing is duplicated, so
-logging, Sentinel, and Cosmos DB behave identically no matter which URL a visitor used.
-
----
-
-## 8. How deployment works — GitHub Actions CI/CD
+## 4. Why Serverless Instead of a Traditional Server
 
 ```mermaid
 flowchart LR
-    Dev["git push to main"] --> GH["GitHub Actions triggered"]
-    GH --> Checkout["actions/checkout@v3"]
-    Checkout --> Deploy["Azure/static-web-apps-deploy@v1"]
-    Deploy -->|app_location: /| Static["Uploads static site files"]
-    Deploy -->|api_location: api| API["Builds & deploys Functions API"]
-    Static --> Live["Live on spotify-web<br/>(all FQDNs update simultaneously)"]
-    API --> Live
+    subgraph Traditional["Always-on VM / dedicated server"]
+        T1[Provision OS] --> T2[Patch OS + runtime] --> T3[Configure web server]
+        T3 --> T4[Manage TLS certs] --> T5[Scale manually / autoscale group]
+        T5 --> T6[Pay 24/7 even at 0 traffic]
+    end
+    subgraph Serverless["Azure Static Web Apps + Functions"]
+        S1[git push] --> S2[Azure builds + deploys] --> S3[Runs on-demand,\nscales to zero]
+        S3 --> S4[TLS auto-issued] --> S5[Pay per request/GB-s only]
+    end
 ```
 
-- **Trigger**: every `push` to `main`, and every pull request (build-and-preview, then a
-  separate job tears the PR's preview environment down when the PR is closed).
-- **Job**: a single `ubuntu-latest` runner checks out the repo and hands it to
-  `Azure/static-web-apps-deploy@v1`.
-- **What gets deployed, in one action**: the static site (`app_location: "/"`) **and**
-  the Functions API (`api_location: "api"**) — one push updates both halves of the
-  application atomically; there's no separate database migration step since Cosmos DB
-  documents are schema-flexible.
-- **Secrets**: the deployment token lives in the repo's GitHub secret
-  (`AZURE_STATIC_WEB_APPS_API_TOKEN_NICE_POND_03E938600`) — never in source control.
-- **Rollback**: revert the commit and push again; the workflow redeploys the previous
-  state the same way.
-- **No build step required**: this is a static/vanilla-JS project, so there's no
-  webpack/vite compile stage — the checkout output *is* the deployable output.
+| Concern | Traditional server (VM/LAMP box) | Serverless (this project) |
+|---|---|---|
+| OS patching | Your responsibility, ongoing | None — no OS to patch |
+| Idle cost | Billed 24/7 whether or not anyone visits | Near $0 at low/no traffic |
+| Scaling | Manual autoscale rules, load balancers | Automatic, built into the platform |
+| TLS/HTTPS | Manual cert issuance/renewal (or Let's Encrypt automation) | Automatic, free, managed |
+| Attack surface | Full OS + web server + everything installed | Just the app code; platform is Microsoft's to secure |
+| Deployment | SSH in, copy files, restart services | `git push` → GitHub Actions → done |
+
+### Narrative / speaker script
+
+> "A traditional setup means someone owns an OS forever — patching it,
+> hardening it, watching disk space, renewing certificates. None of that
+> exists here. There is no server to SSH into. When there's no traffic, we pay
+> nothing for compute. When traffic spikes, Azure scales it without anyone
+> touching a dial. For a training/simulation tool that might sit idle for
+> weeks between exercises, that's not just cheaper — it's fewer things that
+> can be misconfigured or forgotten."
+
+---
+
+## 5. Why Node.js Instead of the Traditional LAMP/WAMP Approach
+
+| Concern | LAMP/WAMP (PHP + Apache/MySQL) | Node.js (this project) |
+|---|---|---|
+| Language boundary | PHP (backend) + separate JS (frontend) — two mental models | Same language (JavaScript) on both sides |
+| Hosting fit | Needs a persistent process (Apache/nginx + PHP-FPM) | First-class fit for serverless Functions (event-driven, short-lived) |
+| Native Azure SDKs | Possible via community libraries, less first-party support | `@azure/functions`, `@azure/cosmos` are official, actively maintained |
+| Async I/O | Traditional PHP model is request-per-process/thread | Node's event loop suits I/O-bound work (DB calls, HTTP) natively |
+| Local dev parity | Needs XAMPP/WAMP stack, Apache config, PHP version matching | `npm install` + Azure Functions Core Tools; near-identical to prod |
+
+### Narrative / speaker script
+
+> "We didn't pick Node.js out of trend-chasing — it's the path of least
+> resistance for this exact hosting model. Azure Functions' official SDKs for
+> both Functions itself and Cosmos DB are Node-first. And because the
+> frontend was already JavaScript, using JavaScript on the backend too means
+> one language, one set of tooling, one thing to learn — instead of running a
+> full Apache/MySQL/PHP stack just to handle a single POST endpoint."
+
+---
+
+## 6. Why This Is More Manageable and Monitorable
+
+```mermaid
+flowchart TB
+    App[App Insights\nWeb SDK] -->|page views, geo, browser| LAW[Log Analytics Workspace]
+    Func[Azure Function logs] -->|context.log / context.error| LAW
+    LAW --> Sentinel[Microsoft Sentinel]
+    Sentinel --> Rules[Analytics rules /\nscheduled queries]
+    Sentinel --> Incidents[Incidents + workbooks]
+    Defender[Defender for Cloud] -->|posture, recommendations| LAW
+    Rules --> Alerts[Alerts to security team]
+```
+
+| Capability | How it's satisfied here |
+|---|---|
+| Who is visiting, from where | Application Insights: page views, geolocation (via IP), browser/device |
+| What the backend is doing | Structured `context.log`/`context.error` lines, now IP-aware via `getClientIp()` |
+| Centralized log search | Log Analytics Workspace, queried with KQL |
+| Correlation & alerting | Microsoft Sentinel analytics rules over the same workspace |
+| Security posture / misconfig detection | Microsoft Defender for Cloud recommendations |
+| Audit trail of infra changes | Azure Activity Log (who changed what resource, when) |
+
+### Narrative / speaker script
+
+> "Everything we just walked through — the app logs, the visitor telemetry —
+> lands in one place: the Log Analytics Workspace. That single workspace is
+> what Sentinel reads from to build alerting rules and incidents, and it's
+> also what Defender for Cloud uses to flag security misconfigurations across
+> the resource group. So instead of stitching together a VM's syslog, a web
+> server's access log, and an app's own log file from three different places,
+> we get one pane of glass, built on services we're already using."
+
+---
+
+## 7. Custom FQDN — How the Domain/Hostname Story Works
+
+```mermaid
+flowchart LR
+    subgraph Now["Live today"]
+        Visitor1[Visitor] --> NetlifyHost["sp0t1fy.netlify.app\n(netlify.toml reverse-proxy)"]
+        NetlifyHost -->|"/*  →  Azure SWA, status 200, force=true"| SWAHost[nice-pond-03e938600.7.azurestaticapps.net]
+    end
+    subgraph Pending["Pending eu.org approval"]
+        Visitor2[Visitor] --> CustomHost[my.sp0tify.eu.org]
+        CustomHost --> CFZone[Cloudflare DNS zone\nsp0tify.eu.org]
+        CFZone -->|CNAME/ALIAS| SWAHost
+    end
+```
+
+### Reading the diagram
+
+- **Two independent hostnames point at the same backend.** `sp0t1fy.netlify.app`
+  is live right now; `my.sp0tify.eu.org` is the intended permanent domain,
+  currently stuck at eu.org's manual/volunteer registration review step (no
+  fixed SLA — hours to days). Neither is "the real one" at the expense of the
+  other; they can both work simultaneously, or the eu.org domain can later
+  redirect/replace the Netlify one.
+- **`netlify.toml` is the entire Netlify configuration** — three lines of
+  actual logic:
+  ```toml
+  [[redirects]]
+    from = "/*"
+    to = "https://nice-pond-03e938600.7.azurestaticapps.net/:splat"
+    status = 200
+    force = true
+  ```
+  `status = 200` + `force = true` is what makes this a true reverse proxy
+  (rewrite) instead of a redirect — the visitor's browser bar keeps showing
+  `sp0t1fy.netlify.app`, but the HTML/JSON actually came from Azure.
+- **Netlify hosts zero files of its own.** There's no separate deploy of the
+  site's HTML on Netlify to keep in sync — one codebase, one source of truth
+  (Azure Static Web App), Netlify just relays.
+- **Why the visitor IP still shows up correctly:** Netlify automatically adds
+  an `X-Forwarded-For` header carrying the original visitor's IP; the Azure
+  Function's `getClientIp()` helper reads that header first, falling back to
+  Azure's own `x-azure-clientip` header if the site is reached directly.
+
+### Narrative / speaker script
+
+> "We wanted a free, working, presentable hostname today, without waiting on
+> a manual domain-registration review. Netlify solved that in minutes: we
+> pointed a three-line config file at our existing Azure site and told
+> Netlify to force a 200-status rewrite instead of a redirect — so it's
+> invisible to the visitor, but Netlify does none of the actual work. Behind
+> the scenes, we're also still going after `sp0tify.eu.org` through
+> Cloudflare's free DNS, which is the more permanent, brandable option — that
+> one's just sitting in a manual review queue. Both can coexist; neither
+> required touching a single line of application code."
+
+---
+
+## 8. Deployment — GitHub Actions CI/CD Pipeline
+
+```mermaid
+flowchart LR
+    Dev[Developer] -->|git push to main| GH[GitHub Repository]
+    GH --> Trigger["azure-static-web-apps-nice-pond-03e938600.yml\ntriggers on push/PR to main"]
+    Trigger --> Checkout[actions/checkout@v3]
+    Checkout --> Build["Azure/static-web-apps-deploy@v1\naction: upload"]
+    Build --> Deploy[Deploys app_location '/' \n+ api_location 'api']
+    Deploy --> Live[Live at Azure SWA hostname\n+ propagates to Netlify proxy]
+
+    PR[Pull Request opened] -.-> Trigger
+    PRClosed[Pull Request closed] --> CloseJob["close_pull_request_job\naction: close"]
+```
+
+### Reading the diagram
+
+- **Trigger conditions:** the workflow fires on every push to `main`, and
+  separately on pull-request open/sync/reopen (building a temporary staging
+  environment) and on PR close (tearing that staging environment down via the
+  `close_pull_request_job`).
+- **One secret does the heavy lifting:** `AZURE_STATIC_WEB_APPS_API_TOKEN_...`
+  is a GitHub Actions secret Azure generated when the SWA resource was
+  created; it authorizes the `Azure/static-web-apps-deploy@v1` action to
+  upload the build without any manual `az` CLI login.
+- **`app_location: "/"` and `api_location: "api"`** tell Azure where the
+  static frontend files and the Functions API code live in the repo — both in
+  one deploy, one workflow run, no separate pipeline for frontend vs. backend.
+- **Because there's no separate Netlify deploy step,** once this workflow
+  finishes, `sp0t1fy.netlify.app` immediately reflects the change too — it's
+  just proxying to the same Azure hostname the workflow just updated.
+
+### Narrative / speaker script
+
+> "There is exactly one deployment pipeline. A push to `main` triggers a
+> GitHub Actions workflow that checks out the code and hands it to Azure's own
+> Static Web Apps deploy action, using a token Azure issued specifically for
+> this. That single action uploads both the static site and the Functions API
+> in one pass. And because our Netlify hostname is just a proxy with no files
+> of its own, there's nothing extra to deploy there — the moment Azure has the
+> new version, both hostnames serve it."
 
 ---
 
 ## 9. Demonstration
 
-> ⏸️ **[ Presentation pauses here — live demonstration begins ]**
->
-> Suggested walkthrough order for the live demo:
-> 1. Open the live site (default hostname, custom FQDN, or Netlify proxy — whichever is
->    active at demo time) and browse to **Premium**.
-> 2. Submit a subscription with the visible form, showing the masked-card behavior in
->    the browser network tab (only brand/last4/expiry ever leave the client).
-> 3. Switch to the **Azure Portal → Log Analytics workspace (`law-spotify-web`) → Logs**
->    and run a live query against `AppPageViews` to show the just-generated visit,
->    including browser/OS/city/country.
-> 4. Open **Microsoft Sentinel → Workbooks → "MySp0tify - Usage and Access Monitoring"**
->    to show the aggregated view.
-> 5. Open **Sentinel → Analytics** to show the three active detection rules and explain
->    the thresholds.
-> 6. (Optional, if time allows) Trigger the `cosmos-failed-requests` rule by sending a
->    burst of invalid requests to `/api/subscriptions` and show the resulting alert.
-> 7. Close with **Cost Management → Budgets** to show the $0–$20/month footprint of the
->    entire monitored stack.
+> **[Placeholder — live demo begins here]**
+
+Suggested live-demo script, in order:
+
+1. **Show the live site** — open `https://sp0t1fy.netlify.app`, point out the
+   address bar still shows the Netlify hostname while it's actually Azure
+   underneath.
+2. **Walk the "phishing" flow** — click through to Premium, open the
+   subscribe modal, fill in a dummy card, submit.
+3. **Show Cosmos DB** (Azure Portal → Data Explorer) — the new record just
+   landed, with card details masked (brand/last4/expiry only, no full PAN).
+4. **Show Application Insights** (Azure Portal → Live Metrics or Logs) — the
+   page view + the visitor's browser/geo appearing in near-real time.
+5. **Show Log Analytics** — run a KQL query against `traces` showing the
+   `"Stored subscription..."` log line with the real visitor IP attached
+   (proving the `X-Forwarded-For` fix works end-to-end through the proxy).
+6. **Show Sentinel** (if a demo analytics rule/incident exists) — how the same
+   data could trigger an alert.
+7. **Close with the roadmap** — mention `sp0tify.eu.org` as the pending
+   permanent domain, and that no code changes are required when it goes live.
+
+---
+
+## Appendix — Key Files Referenced in This Presentation
+
+| File | Role |
+|---|---|
+| `netlify.toml` | Netlify reverse-proxy config (the entire "Netlify layer") |
+| `api/index.js` | The one API endpoint (`/api/subscriptions`), includes `getClientIp()` |
+| `api/cosmos.js` | Cosmos DB client, lazy container creation, find/create helpers |
+| `api/validation.js` | Pure validation/masking logic for submitted subscription data |
+| `js/appInsights.js` | Client-side Application Insights SDK bootstrap |
+| `staticwebapp.config.json` | Azure SWA routing, headers, MIME types, blocked doc routes |
+| `.github/workflows/azure-static-web-apps-nice-pond-03e938600.yml` | The CI/CD pipeline |
+| `FQDN_DNS_LAMP_INFRASTRUCTURE.md` | Deeper technical detail on the eu.org/Cloudflare domain plan |
+| `PRESENTATION_QA.md` | Companion anticipated Q&A for this presentation |
