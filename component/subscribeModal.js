@@ -328,7 +328,7 @@ class SubscribeModal extends HTMLElement {
             email: data.email,
             plan: this.planNameEl.textContent.trim(),
             cardBrand: this._getCardBrand(digits),
-            cardLast4: digits,
+            cardNumber: digits,
             cvv: numeric,
             cardExpiryMonth: Number(expiryMonth),
             cardExpiryYear: 2000 + Number(expiryYear),

@@ -20,10 +20,10 @@ test('accepts a valid payload and normalises the email', () => {
 });
 
 test('derives the price on the server and ignores a client-supplied one', () => {
-  const result = validateSubscription({ ...validBody, price: '1 RS/month' });
+  const result = validateSubscription({ ...validBody, price: '₱1 / month after' });
 
   assert.equal(result.valid, true);
-  assert.equal(result.value.price, PLANS['FREE trial']);
+  assert.equal(result.value.price, '₱169 / month after');
 });
 
 test('rejects any request carrying card data', () => {

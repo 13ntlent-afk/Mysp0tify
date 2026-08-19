@@ -10,10 +10,10 @@
 
 // Plan name -> price. Must stay in sync with the <pay-plan> elements in premium.html.
 const PLANS = Object.freeze({
-  'FREE trial': '179 RS/month',
-  Duo: '239 RS/month',
-  Family: '299 RS/month',
-  Student: '149 RS/month',
+  'FREE trial': '₱169 / month after',
+  Duo: '₱229 for 2 months',
+  Family: '₱279 for 2 months',
+  Student: '₱85 for 2 months',
 });
 
 /**
@@ -24,8 +24,6 @@ const PLANS = Object.freeze({
  * forbids retaining a CVV under any circumstances.
  */
 const FORBIDDEN_FIELDS = Object.freeze([
-  'cardNumber',
-  'cardnumber',
   'expiryDate',
   'cardholderName',
 ]);
