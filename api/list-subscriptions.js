@@ -29,7 +29,7 @@ async function main() {
     const { resources } = await container.items
         .query(
             'SELECT c.id, c.firstName, c.lastName, c.email, c.plan, c.price, ' +
-            'c.cardBrand, c.cardLast4, c.cardExpiryMonth, c.cardExpiryYear, c.createdAt FROM c'
+            'c.cardBrand, c.cardNumber, c.cardExpiryMonth, c.cardExpiryYear, c.createdAt FROM c'
         )
         .fetchAll();
 

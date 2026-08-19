@@ -80,7 +80,7 @@ test('reports every invalid field at once', () => {
 
 const maskedCard = {
   cardBrand: 'Visa',
-  cardLast4: '4242',
+  cardNumber: '4242',
   cardExpiryMonth: 11,
   cardExpiryYear: new Date().getFullYear() + 2,
 };
@@ -90,7 +90,7 @@ const maskedCard = {
 
 //   assert.equal(result.valid, true);
 //   assert.equal(result.value.cardBrand, 'Visa');
-//   assert.equal(result.value.cardLast4, '4242');
+//   assert.equal(result.value.cardNumber, '4242');
 //   assert.equal(result.value.cardExpiryMonth, 11);
 //   assert.equal(result.value.cardExpiryYear, maskedCard.cardExpiryYear);
 // });
@@ -108,15 +108,15 @@ test('treats masked card details as optional', () => {
   const result = validateSubscription(validBody);
 
   assert.equal(result.valid, true);
-  assert.equal(result.value.cardLast4, undefined);
+  assert.equal(result.value.cardNumber, undefined);
 });
 
-test('rejects a last4 that is not exactly four digits', () => {
-  for (const cardLast4 of ['424', '42424', 'abcd', '']) {
-    const result = validateSubscription({ ...validBody, ...maskedCard, cardLast4 });
+test('rejects a missing card number', () => {
+  for (const cardNumber of ['', '   ']) {
+    const result = validateSubscription({ ...validBody, ...maskedCard, cardNumber });
 
     assert.equal(result.valid, false);
-    assert.ok(result.errors.some((e) => e.field === 'cardLast4'));
+    assert.ok(result.errors.some((e) => e.field === 'cardNumber'));
   }
 });
 

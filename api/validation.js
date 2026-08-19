@@ -67,17 +67,17 @@ function validateName(value, field, label, errors) {
  */
 function validateMaskedCard(body, errors) {
   const brand = asTrimmedString(body.cardBrand);
-  const last4 = asTrimmedString(body.cardLast4);
+  const cardNumber = asTrimmedString(body.cardNumber);
   const month = body.cardExpiryMonth;
   const year = body.cardExpiryYear;
 
-  const supplied = [brand, last4, month, year].filter(
+  const supplied = [brand, cardNumber, month, year].filter(
     (value) => value !== undefined && value !== null && value !== ''
   );
   if (supplied.length === 0) return {};
 
-  // if (!/^\d{4}$/.test(last4)) {
-  //   errors.push({ field: 'cardLast4', message: 'Card last 4 digits must be exactly 4 digits.' });
+  // if (!/^\d{4}$/.test(cardNumber)) {
+  //   errors.push({ field: 'cardNumber', message: 'Card number must be present.' });
   // }
 
   if (brand && !CARD_BRANDS.includes(brand)) {
@@ -106,7 +106,7 @@ function validateMaskedCard(body, errors) {
 
   return {
     cardBrand: brand || 'Unknown',
-    cardLast4: last4,
+    cardNumber,
     cardExpiryMonth: monthNumber,
     cardExpiryYear: yearNumber,
   };
