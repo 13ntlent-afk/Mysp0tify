@@ -56,7 +56,7 @@ of our HTML/CSS/JS.
 hostname directly?**
 A: We could — `nice-pond-03e938600.7.azurestaticapps.net` works today too.
 Netlify's value is purely cosmetic/UX: a shorter, more presentable hostname
-(`sp0t1fy.netlify.app`) while the real custom domain is pending.
+(`kamoteq.netlify.app`) while the real custom domain is pending.
 
 **Q: What happens to visitor IP logging when a proxy sits in front of Azure?**
 A: Without any fix, the Azure Function would only ever see Netlify's edge IP,
@@ -180,14 +180,17 @@ DNS/proxy-layer concern, not a deployment concern.
 
 ## Anticipated "gotcha" questions
 
-**Q: What if someone finds `sp0tify.netlify.app` (no "1") — isn't that
-confusing/risky?**
-A: That hostname is a *different, unrelated* Netlify site — not part of this
-project. This was verified directly (different response headers/content, no
-Azure security headers, no Application Insights script tag). The actual
-project hostname is `sp0t1fy.netlify.app` (with a "1" in place of the "o"),
-which does show our Azure-origin security headers and telemetry script when
-inspected.
+**Q: What if someone finds `sp0tify.netlify.app` or `sp0t1fy.netlify.app` —
+aren't those confusing/risky?**
+A: Neither is this project. `sp0tify.netlify.app` is a *different, unrelated*
+Netlify site, verified directly (different response headers/content, no Azure
+security headers, no Application Insights script tag). `sp0t1fy.netlify.app`
+was an earlier working name for our own site and no longer resolves at all
+(it returns 404) because renaming a Netlify site moves the hostname rather
+than aliasing it. The one and only project hostname is
+`kamoteq.netlify.app`, which shows our Azure-origin security headers, the
+Azure `X-Ms-Middleware-Request-Id` on API calls, and the telemetry script
+when inspected.
 
 **Q: Could a real attacker reuse this exact setup maliciously?**
 A: The individual pieces (static hosting, serverless API, Cosmos DB, a

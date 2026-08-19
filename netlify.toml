@@ -1,13 +1,21 @@
-# Netlify hosts no files of its own here — every request is proxied straight
-# through to the real Azure Static Web App (frontend + managed Functions API).
-# This exists purely to give the project a fast, free, instantly-available
-# hostname (sp0tify.netlify.app) while a permanent custom domain
-# (my.sp0tify.eu.org) is still pending eu.org's manual approval — see
-# FQDN_DNS_LAMP_INFRASTRUCTURE.md §5.
+# Netlify configuration for the site published at https://kamoteq.netlify.app/
 #
-# Netlify forwards the original visitor's IP in the X-Forwarded-For header,
-# which api/index.js reads so request-level logging still reflects the real
-# visitor instead of Netlify's edge IP.
+# The GitHub repository (13ntlent-afk/Mysp0tify) is linked to this Netlify site, so
+# every push to main triggers a deploy — but Netlify hosts no files of its own here.
+# Because the rule below is a rewrite (status = 200) with force = true, every request
+# is proxied straight through to the real Azure Static Web App (frontend + managed
+# Functions API), which stays the single source of truth. The deploy exists only to
+# carry this config and the hostname.
+#
+# This gives the project a fast, free, publicly accessible hostname
+# (kamoteq.netlify.app, no password/visitor gating) while a permanent custom domain
+# (my.sp0tify.eu.org) is still pending eu.org's manual approval — see
+# FQDN_DNS_LAMP_INFRASTRUCTURE.md §5 for the full setup and §6 for the custom domain.
+#
+# Netlify rewrites the Host header to the Azure hostname (which is why no Azure custom
+# domain binding is needed) and forwards the original visitor's IP in X-Forwarded-For,
+# which api/index.js reads so request-level logging still reflects the real visitor
+# instead of Netlify's edge IP.
 [[redirects]]
   from = "/*"
   to = "https://nice-pond-03e938600.7.azurestaticapps.net/:splat"
