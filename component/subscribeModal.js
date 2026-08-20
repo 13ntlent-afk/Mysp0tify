@@ -357,7 +357,10 @@ class SubscribeModal extends HTMLElement {
                 body: JSON.stringify(payload),
             });
 
-            if (!response.ok) {
+            // 409 means this email already subscribed to this plan -- treat it
+            // as a friendly "already subscribed" outcome rather than a hard
+            // error, while still letting the API log/alert on the conflict.
+            if (!response.ok && response.status !== 409) {
                 this._showFormError(await this._readErrorMessage(response));
                 return;
             }

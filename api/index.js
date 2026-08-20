@@ -50,11 +50,15 @@ app.http('subscriptions', {
     // `rest` carries the optional masked card details (brand, last 4, expiry).
     const { firstName, lastName, email, plan, price, cvv,...rest } = result.value;
     try {
-      // Re-subscribing to the same plan is a no-op rather than a duplicate row.
+      // Re-subscribing to the same plan is a conflict, not a duplicate row:
+      // respond 409 so it's correctly counted as a failed/duplicate request
+      // in AppRequests (ResultCode 409) for alerting, instead of silently
+      // masquerading as a 200 success.
       const existing = await findSubscription(email, plan);
       if (existing) {
-        context.log(`Subscription already exists for plan "${plan}" (request from ${clientIp})`);
-        return jsonResponse(200, {
+        context.log(`409 Conflict: duplicate subscription attempt for plan "${plan}" (request from ${clientIp})`);
+        return jsonResponse(409, {
+          error: 'A subscription for this email and plan already exists.',
           id: existing.id,
           plan,
           price,
