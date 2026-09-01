@@ -57,35 +57,35 @@ The project demonstrates enterprise-grade cloud deployment patterns including DN
                           ▼
 ┌─────────────────────────────────────────────────────────────┐
 │              DNS Resolution (Domain Name)                   │
-│  sp0tfy.netlify.app → 76.x.x.x (Netlify Edge IP)         │
+│  sp0tfy.netlify.app → 76.x.x.x (Netlify Edge IP)            │
 └─────────────────────────┬───────────────────────────────────┘
                           │
                           ▼
 ┌──────────────────────────────────────────────────────────────┐
-│           Netlify CDN (Reverse Proxy + Cache)               │
-│  - TLS/SSL Termination                                      │
-│  - Global edge distribution (300+ locations)               │
-│  - Rewrites Host header to Azure hostname                   │
-│  - Response caching and compression                         │
-└─────────────────────────┬──────────────────────────────────┘
+│           Netlify CDN (Reverse Proxy + Cache)                │
+│  - TLS/SSL Termination                                       │
+│  - Global edge distribution (300+ locations)                 │
+│  - Rewrites Host header to Azure hostname                    │
+│  - Response caching and compression                          │
+└─────────────────────────┬────────────────────────────────────┘
                           │ Host: nice-pond-03e938600.7...
                           │ Forward to Azure origin
                           ▼
 ┌──────────────────────────────────────────────────────────────┐
-│        Azure Static Web Apps (SWA) - Free Tier              │
-│  Endpoint: nice-pond-03e938600.7.azurestaticapps.net        │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │ Static File Serving (CDN)                              │ │
-│  │ - index.html, css/, js/, assets/, Spotify-songs/      │ │
-│  │ - 404 routing for SPA support                          │ │
-│  └────────────────────────┬───────────────────────────────┘ │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │ Managed Azure Functions API (/api/*)                  │ │
-│  │ - Route: POST /api/subscriptions                       │ │
-│  │ - Node.js 18+ runtime                                  │ │
-│  │ - Validates form data and stores in Cosmos DB          │ │
-│  └────────────────────────┬───────────────────────────────┘ │
-└─────────────────────────┬──────────────────────────────────┘
+│        Azure Static Web Apps (SWA) - Free Tier               │
+│  Endpoint: nice-pond-03e938600.7.azurestaticapps.net         │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │ Static File Serving (CDN)                              │  │
+│  │ - index.html, css/, js/, assets/, Spotify-songs/       │  │
+│  │ - 404 routing for SPA support                          │  │
+│  └────────────────────────┬───────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │ Managed Azure Functions API (/api/*)                   │  │
+│  │ - Route: POST /api/subscriptions                       │  │
+│  │ - Node.js 18+ runtime                                  │  │
+│  │ - Validates form data and stores in Cosmos DB          │  │
+│  └────────────────────────┬───────────────────────────────┘  │
+└─────────────────────────┬────────────────────────────────────┘
                           │ Connection string from
                           │ app settings (server-side)
                           ▼
@@ -562,7 +562,7 @@ The project uses a **three-tier FQDN architecture**:
                      ▼
 ┌─────────────────────────────────────────────┐
 │   Azure-Assigned FQDN                       │
-│   nice-pond-03e938600.7.azurestaticapps.net│
+│   nice-pond-03e938600.7.azurestaticapps.net │
 │   (True origin, permanent, always works)    │
 └─────────────────────────────────────────────┘
                      ▲
@@ -600,12 +600,12 @@ Application ─→ Azure Functions API
              (COSMOS_ENDPOINT, COSMOS_KEY)
                  ↓
          Azure Cosmos DB Serverless
-         ┌──────────────────────────┐
-         │ Database: cosmo-spotify-db
-         │ Container: subscription  │
-         │ Partition Key: /email    │
-         │ RUs: 400–4000 auto-scale │
-         └──────────────────────────┘
+         ┌────────────────────────────┐
+         │ Database: cosmo-spotify-db │
+         │ Container: subscription    │
+         │ Partition Key: /email      │
+         │ RUs: 400–4000 auto-scale   │
+         └────────────────────────────┘
                  ↓
           JSON Documents
          ┌──────────────────────┐
