@@ -44,7 +44,7 @@ flowchart TB
     end
 
     subgraph Edge["Edge / Front Door (optional proxy layer)"]
-        Netlify[Netlify\nkamoteq.netlify.app\nnetlify.toml reverse-proxy]
+        Netlify[Netlify\nsp0tfy.netlify.app\nnetlify.toml reverse-proxy]
         CF[Cloudflare DNS\nsp0tify.eu.org zone]
     end
 
@@ -78,7 +78,7 @@ flowchart TB
   HTML/CSS/JS — there is no app to install, nothing "runs" on their machine
   beyond a normal web page.
 - **Edge box (Netlify + Cloudflare):** this is the "front door." Today, the
-  live, working front door is **Netlify** (`kamoteq.netlify.app`), configured
+  live, working front door is **Netlify** (`sp0tfy.netlify.app`), configured
   purely as a reverse proxy via `netlify.toml` — it owns no files, it just
   relays every request straight through to Azure. Cloudflare is drawn as a
   dotted/future line because it's the DNS host for `sp0tify.eu.org`, the
@@ -124,7 +124,7 @@ sequenceDiagram
     participant AI as App Insights
     participant LAW as Log Analytics
 
-    V->>Browser: Opens kamoteq.netlify.app
+    V->>Browser: Opens sp0tfy.netlify.app
     Browser->>Netlify: GET /
     Netlify->>SWA: proxy GET / (force=true)
     SWA-->>Browser: index.html + CSS/JS
@@ -204,7 +204,7 @@ sequenceDiagram
 |---|---|---|
 | Frontend | Static HTML5 + CSS3 + vanilla JS + Web Components (`<pay-plan>`, `<subscribe-modal>`) | No build step, no framework lock-in, deploys as flat files |
 | Hosting | Azure Static Web Apps (Free tier) | Free SSL, free global CDN, native GitHub Actions integration |
-| Proxy / alt. hostname | Netlify (`kamoteq.netlify.app`), config in `netlify.toml` | Instant free hostname while custom domain approval is pending |
+| Proxy / alt. hostname | Netlify (`sp0tfy.netlify.app`), config in `netlify.toml` | Instant free hostname while custom domain approval is pending |
 | Backend | Azure Functions v4 (Node.js 20, `@azure/functions` programming model) | Serverless, scales to zero, billed only per invocation |
 | Database | Azure Cosmos DB (NoSQL API), partitioned on `/email` | Serverless-friendly, low-latency point reads by partition key |
 | Telemetry | Application Insights Web SDK (`js/appInsights.js`) | Auto page-view, geo, browser/device tracking, zero backend code |
@@ -319,7 +319,7 @@ flowchart TB
 ```mermaid
 flowchart LR
     subgraph Now["Live today"]
-        Visitor1[Visitor] --> NetlifyHost["kamoteq.netlify.app\n(netlify.toml reverse-proxy)"]
+        Visitor1[Visitor] --> NetlifyHost["sp0tfy.netlify.app\n(netlify.toml reverse-proxy)"]
         NetlifyHost -->|"/*  →  Azure SWA, status 200, force=true"| SWAHost[nice-pond-03e938600.7.azurestaticapps.net]
     end
     subgraph Pending["Pending eu.org approval"]
@@ -331,7 +331,7 @@ flowchart LR
 
 ### Reading the diagram
 
-- **Two independent hostnames point at the same backend.** `kamoteq.netlify.app`
+- **Two independent hostnames point at the same backend.** `sp0tfy.netlify.app`
   is live right now; `my.sp0tify.eu.org` is the intended permanent domain,
   currently stuck at eu.org's manual/volunteer registration review step (no
   fixed SLA — hours to days). Neither is "the real one" at the expense of the
@@ -348,7 +348,7 @@ flowchart LR
   ```
   `status = 200` + `force = true` is what makes this a true reverse proxy
   (rewrite) instead of a redirect — the visitor's browser bar keeps showing
-  `kamoteq.netlify.app`, but the HTML/JSON actually came from Azure.
+  `sp0tfy.netlify.app`, but the HTML/JSON actually came from Azure.
 - **Netlify hosts zero files of its own.** There's no separate deploy of the
   site's HTML on Netlify to keep in sync — one codebase, one source of truth
   (Azure Static Web App), Netlify just relays.
@@ -400,7 +400,7 @@ flowchart LR
   static frontend files and the Functions API code live in the repo — both in
   one deploy, one workflow run, no separate pipeline for frontend vs. backend.
 - **Because there's no separate Netlify deploy step,** once this workflow
-  finishes, `kamoteq.netlify.app` immediately reflects the change too — it's
+  finishes, `sp0tfy.netlify.app` immediately reflects the change too — it's
   just proxying to the same Azure hostname the workflow just updated.
 
 ### Narrative / speaker script
@@ -421,7 +421,7 @@ flowchart LR
 
 Suggested live-demo script, in order:
 
-1. **Show the live site** — open `https://kamoteq.netlify.app`, point out the
+1. **Show the live site** — open `https://sp0tfy.netlify.app`, point out the
    address bar still shows the Netlify hostname while it's actually Azure
    underneath.
 2. **Walk the "phishing" flow** — click through to Premium, open the

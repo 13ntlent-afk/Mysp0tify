@@ -6,7 +6,7 @@ underneath* — how names resolve to servers, how that maps onto the classic
 LAMP/WAMP mental model, and how the infrastructure here differs from a traditional
 self-hosted server.
 
-> **Current public entry point: <https://kamoteq.netlify.app/>**
+> **Current public entry point: <https://sp0tfy.netlify.app/>**
 > The site is served to the public through a **Netlify reverse proxy** whose entire
 > configuration is the [netlify.toml](netlify.toml) file in this repository. The GitHub
 > repository [`13ntlent-afk/Mysp0tify`](https://github.com/13ntlent-afk/Mysp0tify) is
@@ -21,7 +21,7 @@ self-hosted server.
 2. [DNS](#2-dns)
 3. [How LAMP/WAMP relates to this](#3-how-lampwamp-relates-to-this)
 4. [How the infrastructure relates to this](#4-how-the-infrastructure-relates-to-this)
-5. [Netlify: the live public front door (`kamoteq.netlify.app`)](#5-netlify-the-live-public-front-door-kamoteqnetlifyapp)
+5. [Netlify: the live public front door (`sp0tfy.netlify.app`)](#5-netlify-the-live-public-front-door-sp0tfynetlifyapp)
 6. [Deployment guide: custom FQDN via eu.org + Cloudflare (pending)](#6-deployment-guide-custom-fqdn-via-euorg--cloudflare-pending)
 
 ---
@@ -44,13 +44,13 @@ Static Web App:
 
 | FQDN | Role | Status |
 |---|---|---|
-| `kamoteq.netlify.app` | The **public entry point** people are given. A Netlify-assigned hostname on Netlify's shared `netlify.app` domain; serves nothing itself, rewrites every request to the Azure FQDN below (see [§5](#5-netlify-the-live-public-front-door-kamoteqnetlifyapp)) | **Live** |
+| `sp0tfy.netlify.app` | The **public entry point** people are given. A Netlify-assigned hostname on Netlify's shared `netlify.app` domain; serves nothing itself, rewrites every request to the Azure FQDN below (see [§5](#5-netlify-the-live-public-front-door-sp0tfynetlifyapp)) | **Live** |
 | `nice-pond-03e938600.7.azurestaticapps.net` | The permanent, Azure-assigned default hostname — the true origin, never changes, always works | **Live** |
 | `my.sp0tify.eu.org` | The custom/vanity FQDN — an alias to be layered on top via DNS + domain validation (see [§6](#6-deployment-guide-custom-fqdn-via-euorg--cloudflare-pending)) | Pending eu.org approval |
 
-A domain name by itself (`kamoteq.netlify.app`) is **not** fully qualified until every
+A domain name by itself (`sp0tfy.netlify.app`) is **not** fully qualified until every
 label up to the root is known — in casual use the trailing root dot is omitted because
-resolvers add it implicitly, but formally `kamoteq.netlify.app.` (with the dot) is the
+resolvers add it implicitly, but formally `sp0tfy.netlify.app.` (with the dot) is the
 true FQDN.
 
 **Why it matters here specifically:** both platforms in the chain are **multi-tenant**
@@ -59,19 +59,19 @@ underlying IP addresses. The FQDN in the HTTP `Host` header (and in the TLS SNI
 extension during the handshake) is the *only* thing telling each edge which customer's
 content to serve for a given request:
 
-- At Netlify's edge, `Host: kamoteq.netlify.app` selects this site out of every other
-  `*.netlify.app` site sharing those IPs. The label `kamoteq` is globally unique inside
+- At Netlify's edge, `Host: sp0tfy.netlify.app` selects this site out of every other
+  `*.netlify.app` site sharing those IPs. The label `sp0tfy` is globally unique inside
   Netlify's `netlify.app` zone, which is why claiming a site name is first-come,
   first-served.
 - At Azure's edge, `Host: nice-pond-03e938600.7.azurestaticapps.net` selects this Static
   Web App. Netlify **rewrites the `Host` header** to the destination hostname when it
-  proxies, which is exactly why this works without registering `kamoteq.netlify.app` as a
+  proxies, which is exactly why this works without registering `sp0tfy.netlify.app` as a
   custom domain on the Azure side.
 
 That second point is directly observable — sending Azure the *wrong* `Host` gets nothing:
 
 ```powershell
-curl.exe -s -o NUL -w "%{http_code}" https://nice-pond-03e938600.7.azurestaticapps.net/ -H "Host: kamoteq.netlify.app"
+curl.exe -s -o NUL -w "%{http_code}" https://nice-pond-03e938600.7.azurestaticapps.net/ -H "Host: sp0tfy.netlify.app"
 # 404  — Azure's shared edge has no tenant registered under that hostname
 
 curl.exe -s -o NUL -w "%{http_code}" https://nice-pond-03e938600.7.azurestaticapps.net/
@@ -110,15 +110,15 @@ sequenceDiagram
     participant NL as Netlify edge
     participant AzDNS as Azure DNS (azurestaticapps.net)
 
-    Browser->>Resolver: Resolve kamoteq.netlify.app
+    Browser->>Resolver: Resolve sp0tfy.netlify.app
     Resolver->>Root: Who handles .app?
     Root-->>Resolver: TLD nameserver address
     Resolver->>TLD: Who handles netlify.app?
     TLD-->>Resolver: Netlify's authoritative nameservers
-    Resolver->>Auth: A record for kamoteq.netlify.app?
+    Resolver->>Auth: A record for sp0tfy.netlify.app?
     Auth-->>Resolver: 13.215.239.219 / 52.74.6.109 (TTL 120)
     Resolver-->>Browser: Resolved address (cached for TTL seconds)
-    Browser->>NL: HTTPS GET / (Host: kamoteq.netlify.app, SNI: kamoteq.netlify.app)
+    Browser->>NL: HTTPS GET / (Host: sp0tfy.netlify.app, SNI: sp0tfy.netlify.app)
     NL->>AzDNS: Resolve nice-pond-03e938600.7.azurestaticapps.net
     AzDNS-->>NL: Azure Static Web Apps edge address
     NL->>NL: Rewrite Host + forward request, add X-Forwarded-For
@@ -128,11 +128,11 @@ Measured for real (short TTL of 120s is Netlify's, chosen so it can move traffic
 edge IPs quickly):
 
 ```powershell
-Resolve-DnsName kamoteq.netlify.app -Server 8.8.8.8 -Type A
+Resolve-DnsName sp0tfy.netlify.app -Server 8.8.8.8 -Type A
 
 # Name                Type NameHost IPAddress      TTL
-# kamoteq.netlify.app    A          13.215.239.219 120
-# kamoteq.netlify.app    A          52.74.6.109    120
+# sp0tfy.netlify.app    A          13.215.239.219 120
+# sp0tfy.netlify.app    A          52.74.6.109    120
 ```
 
 Two A records are returned so the client has a fallback if one edge address is
@@ -145,7 +145,7 @@ Azure with no proxy hop at all.
 
 | Record | Used for | Why this type |
 |---|---|---|
-| **A** (Netlify-managed) | `kamoteq.netlify.app` → Netlify's edge IPs | Created automatically by Netlify inside its own `netlify.app` zone the moment the site was named — **this project performs no DNS administration for the live hostname at all** |
+| **A** (Netlify-managed) | `sp0tfy.netlify.app` → Netlify's edge IPs | Created automatically by Netlify inside its own `netlify.app` zone the moment the site was named — **this project performs no DNS administration for the live hostname at all** |
 | **CNAME** | Pointing a subdomain (e.g. `my`) at `nice-pond-03e938600.7.azurestaticapps.net` | CNAME aliases one name to another; only legal on non-apex names |
 | **TXT** | Proving ownership of an apex domain before Azure will route/certify it | Apex names can't hold a CNAME, so ownership is proven with an arbitrary string instead of a routing record |
 | **ALIAS / ANAME** (registrar-dependent) | Routing an apex domain itself to Azure's edge | A registrar-side feature that behaves like a CNAME but is legal at the zone apex — not a real DNS record type, purely a provider convenience that resolves to A/AAAA at query time |
@@ -167,7 +167,7 @@ old (or absent) answer keeps serving it until its TTL expires. This is also why
 hours after the record is added correctly — Azure itself is subject to the same caching.
 
 Note that the Netlify hostname sidesteps this entirely: nothing was ever cached for
-`kamoteq.netlify.app` before it existed, and its 120-second TTL means even a change of
+`sp0tfy.netlify.app` before it existed, and its 120-second TTL means even a change of
 edge IPs is invisible within two minutes.
 
 ### 2.4 Why DNS is decoupled from the application
@@ -200,7 +200,7 @@ deployed.
 | LAMP/WAMP layer | Traditional role | What replaces it in the live deployment |
 |---|---|---|
 | **L**inux / **W**indows (OS) | Patch, secure, and manage a full operating system yourself | Nothing to manage — both Netlify's edge and Azure Static Web Apps are serverless; there's no OS you can even log into |
-| **A**pache (web server) | Serve static files, terminate TLS, reverse-proxy to the app layer, handle vhosts/custom domains | Split across two managed edges: **Netlify** terminates TLS for `kamoteq.netlify.app` and reverse-proxies (`netlify.toml`, [§5](#5-netlify-the-live-public-front-door-kamoteqnetlifyapp)) — Apache's `mod_proxy`/`ProxyPass` role; **Azure's Static Web Apps CDN** then serves the files and routes by hostname per [§1](#1-how-fqdn-works-in-this-context) — Apache's vhost + `DocumentRoot` role |
+| **A**pache (web server) | Serve static files, terminate TLS, reverse-proxy to the app layer, handle vhosts/custom domains | Split across two managed edges: **Netlify** terminates TLS for `sp0tfy.netlify.app` and reverse-proxies (`netlify.toml`, [§5](#5-netlify-the-live-public-front-door-sp0tfynetlifyapp)) — Apache's `mod_proxy`/`ProxyPass` role; **Azure's Static Web Apps CDN** then serves the files and routes by hostname per [§1](#1-how-fqdn-works-in-this-context) — Apache's vhost + `DocumentRoot` role |
 | **M**ySQL (relational DB) | Store structured rows (e.g. a `subscriptions` table) | Azure Cosmos DB (NoSQL, document-based) — same *role* (persist subscription data), different data model: JSON documents in a container instead of rows in a table, queried via `/email` partition key instead of a primary key/index |
 | **P**HP (server-side app logic) | Handle form submissions, validate input, talk to MySQL | Node.js in [api/index.js](api/index.js) / [api/validation.js](api/validation.js), running as an Azure Functions app — same *role* (validate + persist the subscription form), executed as short-lived serverless invocations instead of long-running Apache/mod_php worker processes |
 
@@ -219,7 +219,7 @@ transparently, without telling the browser"):
 
 The distinction that matters in all three: a **redirect** sends the browser a new URL and
 the address bar changes; a **rewrite/proxy** fetches the content server-side and the
-visitor never learns the origin exists. That is why `kamoteq.netlify.app` stays in the
+visitor never learns the origin exists. That is why `sp0tfy.netlify.app` stays in the
 address bar even though every byte came from `azurestaticapps.net`.
 
 ### 3.3 The key conceptual difference
@@ -266,7 +266,7 @@ more machines and load-balancing between them yourself.
 
 ```mermaid
 flowchart LR
-    DNS["DNS: kamoteq.netlify.app (A, Netlify-managed)"] --> NL["Netlify edge<br/>netlify.toml rewrite, status 200, force"]
+    DNS["DNS: sp0tfy.netlify.app (A, Netlify-managed)"] --> NL["Netlify edge<br/>netlify.toml rewrite, status 200, force"]
     NL -->|"proxies /*, rewrites Host, adds X-Forwarded-For"| Edge[Azure Static Web Apps global edge/CDN]
     DNS2["DNS: my.sp0tify.eu.org (CNAME, pending)"] -.->|"future: direct, no proxy hop"| Edge
     Edge -->|static files| Site[index.html, css, js, assets]
@@ -280,7 +280,7 @@ flowchart LR
   scales automatically with traffic and costs based on usage rather than reserved
   capacity.
 - **Networking/TLS** is handled by two shared edge networks. Netlify issues and renews
-  the certificate for `kamoteq.netlify.app` automatically (a `*.netlify.app` wildcard),
+  the certificate for `sp0tfy.netlify.app` automatically (a `*.netlify.app` wildcard),
   and Azure does the same for its own hostname; the hop between them is itself HTTPS, so
   the request is encrypted end to end with **no certificate management anywhere in this
   project**.
@@ -308,9 +308,9 @@ step further.
 
 ---
 
-## 5. Netlify: the live public front door (`kamoteq.netlify.app`)
+## 5. Netlify: the live public front door (`sp0tfy.netlify.app`)
 
-Everything the public touches enters through **<https://kamoteq.netlify.app/>**. This
+Everything the public touches enters through **<https://sp0tfy.netlify.app/>**. This
 section documents that layer completely: why it exists, how the GitHub repository was
 connected to it, what deploying actually does, how the site was made publicly
 accessible, and how to prove the whole chain works.
@@ -326,7 +326,7 @@ machine-generated and unmemorable.
 
 | Requirement | How Netlify satisfies it |
 |---|---|
-| A human-readable hostname, today | Site name is chosen at deploy time; `kamoteq.netlify.app` was live within minutes |
+| A human-readable hostname, today | Site name is chosen at deploy time; `sp0tfy.netlify.app` was live within minutes |
 | Free HTTPS | Covered by Netlify's managed `*.netlify.app` wildcard certificate — nothing to request, install, or renew |
 | No approval process | Netlify owns the `netlify.app` zone, so no ownership validation is needed ([§2.2](#22-record-types-used-in-this-project)) |
 | No duplicate hosting to maintain | The rewrite in `netlify.toml` keeps Azure as the single source of truth ([§5.5](#55-netlifytoml-line-by-line)) |
@@ -338,7 +338,7 @@ machine-generated and unmemorable.
 This is the single most misread part of the architecture, so stated plainly:
 
 - Netlify **is** the TLS terminator, the DNS answer, and the HTTP entry point for
-  `kamoteq.netlify.app`.
+  `sp0tfy.netlify.app`.
 - Netlify **is not** hosting this site. It stores no HTML, runs no build, executes no
   functions, and holds no database connection. Every response body originates from the
   Azure Static Web App.
@@ -354,7 +354,7 @@ because the request never reaches Netlify's own file store, it is rewritten to A
 which does not publish that file:
 
 ```powershell
-curl.exe -s -o NUL -w "%{http_code}" https://kamoteq.netlify.app/Dockerfile
+curl.exe -s -o NUL -w "%{http_code}" https://sp0tfy.netlify.app/Dockerfile
 # 404  — proof that Netlify's own copy of the repo is not being served
 ```
 
@@ -383,7 +383,7 @@ Netlify's Git integration, so deploys are push-driven rather than manual uploads
 5. **Deploy site.** Netlify clones the repo, finds [netlify.toml](netlify.toml), applies
    the redirect rule, and publishes.
 6. **Rename the site** under *Site configuration → General → Site details → Change site
-   name* to `kamoteq`, which immediately provisions the FQDN `kamoteq.netlify.app` and
+   name* to `sp0tfy`, which immediately provisions the FQDN `sp0tfy.netlify.app` and
    its certificate. (Earlier names used during development, such as
    `sp0t1fy.netlify.app`, stop resolving once the site is renamed — a rename is a move,
    not an alias. Note also that `sp0tify.netlify.app` is an unrelated third party's site
@@ -404,7 +404,7 @@ Previews at their own temporary hostnames, which proxy to the same Azure origin.
 
 | Property | Value |
 |---|---|
-| Public URL | <https://kamoteq.netlify.app/> |
+| Public URL | <https://sp0tfy.netlify.app/> |
 | DNS | `A 13.215.239.219`, `A 52.74.6.109` (TTL 120), managed entirely by Netlify |
 | TLS | Netlify-managed `*.netlify.app` certificate, auto-renewing |
 | HSTS | `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` (set by Netlify) |
@@ -451,7 +451,7 @@ openly reachable with no login, password, or invitation:
 Verified anonymously (no cookies, no credentials, from outside the Netlify account):
 
 ```powershell
-curl.exe -s -o NUL -D - https://kamoteq.netlify.app/
+curl.exe -s -o NUL -D - https://sp0tfy.netlify.app/
 
 # HTTP/1.1 200 OK
 # Cache-Control: public,must-revalidate,max-age=30
@@ -471,7 +471,7 @@ confirmation that the site is public.
 ```mermaid
 sequenceDiagram
     participant V as Visitor
-    participant NL as Netlify edge (kamoteq.netlify.app)
+    participant NL as Netlify edge (sp0tfy.netlify.app)
     participant SWA as Azure Static Web App
     participant Fn as Azure Functions (api/index.js)
     participant DB as Cosmos DB
@@ -518,15 +518,15 @@ observed:
 
 ```powershell
 # 1. The Netlify hostname serves the Azure content — identical ETag and Last-Modified
-curl.exe -s -o NUL -D - https://kamoteq.netlify.app/                                   # Etag: "76583765"
+curl.exe -s -o NUL -D - https://sp0tfy.netlify.app/                                   # Etag: "76583765"
 curl.exe -s -o NUL -D - https://nice-pond-03e938600.7.azurestaticapps.net/             # ETag: "76583765"
 
 # 2. Deep paths keep their path through the :splat capture
-curl.exe -s -o NUL -w "%{http_code}" https://kamoteq.netlify.app/premium.html          # 200
+curl.exe -s -o NUL -w "%{http_code}" https://sp0tfy.netlify.app/premium.html          # 200
 
 # 3. The API is proxied too, and it is genuinely Azure answering:
 #    the Azure-specific X-Ms-Middleware-Request-Id header survives the hop
-curl.exe -s -i -X POST https://kamoteq.netlify.app/api/subscriptions `
+curl.exe -s -i -X POST https://sp0tfy.netlify.app/api/subscriptions `
   -H "Content-Type: application/json" -d '{\"email\":\"not-an-email\"}'
 # HTTP/1.1 400 Bad Request
 # Server: Netlify
@@ -534,7 +534,7 @@ curl.exe -s -i -X POST https://kamoteq.netlify.app/api/subscriptions `
 # {"error":"Validation failed.","details":[ ... "Please enter a valid email address." ... ]}
 
 # 4. Netlify serves none of its own deployed files (see §5.2)
-curl.exe -s -o NUL -w "%{http_code}" https://kamoteq.netlify.app/Dockerfile            # 404
+curl.exe -s -o NUL -w "%{http_code}" https://sp0tfy.netlify.app/Dockerfile            # 404
 ```
 
 Check 3 is the strongest single piece of evidence: a Netlify-only deployment could not
@@ -547,7 +547,7 @@ Cosmos DB.
   Netlify's edge cache (`Cache-Status: "Netlify Edge"; hit`) absorbs much of this for
   static assets, honouring the origin's `Cache-Control: public, must-revalidate,
   max-age=30`.
-- **A second point of failure.** If Netlify has an outage, `kamoteq.netlify.app` fails
+- **A second point of failure.** If Netlify has an outage, `sp0tfy.netlify.app` fails
   even though Azure is healthy. The Azure hostname always remains a working bypass, which
   is why it is documented rather than hidden.
 - **Free-plan limits apply to proxied traffic.** Because responses flow through Netlify,
@@ -663,7 +663,7 @@ configuration file that no application code reads.
 
 The two approaches are complementary, not competing:
 
-| | `kamoteq.netlify.app` (live) | `my.sp0tify.eu.org` (pending) |
+| | `sp0tfy.netlify.app` (live) | `my.sp0tify.eu.org` (pending) |
 |---|---|---|
 | Path to origin | Visitor → Netlify edge → Azure (proxy hop) | Visitor → Azure (direct, CNAME) |
 | DNS managed by | Netlify, automatically | Cloudflare zone, delegated by eu.org |

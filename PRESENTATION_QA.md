@@ -56,7 +56,7 @@ of our HTML/CSS/JS.
 hostname directly?**
 A: We could — `nice-pond-03e938600.7.azurestaticapps.net` works today too.
 Netlify's value is purely cosmetic/UX: a shorter, more presentable hostname
-(`kamoteq.netlify.app`) while the real custom domain is pending.
+(`sp0tfy.netlify.app`) while the real custom domain is pending.
 
 **Q: What happens to visitor IP logging when a proxy sits in front of Azure?**
 A: Without any fix, the Azure Function would only ever see Netlify's edge IP,
@@ -188,7 +188,7 @@ security headers, no Application Insights script tag). `sp0t1fy.netlify.app`
 was an earlier working name for our own site and no longer resolves at all
 (it returns 404) because renaming a Netlify site moves the hostname rather
 than aliasing it. The one and only project hostname is
-`kamoteq.netlify.app`, which shows our Azure-origin security headers, the
+`sp0tfy.netlify.app`, which shows our Azure-origin security headers, the
 Azure `X-Ms-Middleware-Request-Id` on API calls, and the telemetry script
 when inspected.
 

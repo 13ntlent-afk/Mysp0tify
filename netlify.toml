@@ -1,4 +1,4 @@
-# Netlify configuration for the site published at https://kamoteq.netlify.app/
+# Netlify configuration for the site published at https://sp0tfy.netlify.app/
 #
 # The GitHub repository (13ntlent-afk/Mysp0tify) is linked to this Netlify site, so
 # every push to main triggers a deploy — but Netlify hosts no files of its own here.
@@ -8,7 +8,7 @@
 # carry this config and the hostname.
 #
 # This gives the project a fast, free, publicly accessible hostname
-# (kamoteq.netlify.app, no password/visitor gating) while a permanent custom domain
+# (sp0tfy.netlify.app, no password/visitor gating) while a permanent custom domain
 # (my.sp0tify.eu.org) is still pending eu.org's manual approval — see
 # FQDN_DNS_LAMP_INFRASTRUCTURE.md §5 for the full setup and §6 for the custom domain.
 #
